@@ -1,0 +1,14 @@
+games:
+  原神:
+    executable: F:/Genshin Impact/Genshin Impact Game/YuanShen.exe
+name: 新自动化任务
+scripts:
+- path: F:/better/BetterGI.exe
+  type: exe
+variables: {}
+version: '1.0'
+workflow:
+- description: ''
+  enabled: true
+  name: '1'
+  type: game

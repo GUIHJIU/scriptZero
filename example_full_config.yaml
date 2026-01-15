@@ -1,0 +1,193 @@
+version: 1.0
+name: "完整功能演示配置"
+
+# 全局变量
+variables:
+  game_path: "C:/Games/ExampleGame/game.exe"
+  account: "player123"
+  character: "warrior"
+  scripts_dir: "./scripts"
+
+# 游戏配置
+games:
+  example_game:
+    executable: "${variables.game_path}"
+    arguments: ["-windowed", "-dx11"]
+    working_dir: "C:/Games/ExampleGame/"
+    window_title: "ExampleGame*"
+    detection:
+      type: "image"
+      templates:
+        - "templates/main_menu.png"
+        - "templates/character_select.png"
+
+# 工作流定义
+workflow:
+  # 游戏启动工作流
+  - name: "启动游戏并登录"
+    type: "game"
+    game: "example_game"
+    actions:
+      - type: "launch"
+      - type: "wait_for"
+        condition: "window_active"
+        timeout: 60
+      - type: "input"
+        sequence: [
+          {"key": "ENTER", "delay": 1.0},
+          {"text": "${variables.account}", "delay": 0.5},
+          {"key": "TAB", "delay": 0.5},
+          {"text": "password123", "delay": 0.5},
+          {"key": "ENTER", "delay": 2.0}
+        ]
+
+  # 脚本链工作流
+  - name: "日常任务循环"
+    type: "script_chain"
+    repeat: "daily"
+    scripts:
+      - path: "${variables.scripts_dir}/daily_quests.py"
+        arguments: ["--character", "${variables.character}"]
+        env_vars:
+          GAME_ACCOUNT: "${variables.account}"
+        conditions:
+          all_of:
+            - type: "resource_check"
+              cpu_max: 70
+            - type: "time_window"
+              start: "02:00"
+              end: "06:00"
+        completion:
+          any_of:
+            - type: "process_exit"
+              code: 0
+            - type: "timeout"
+              seconds: 3600
+            - type: "image_detected"
+              template: "templates/quest_complete.png"
+              threshold: 0.8
+
+      - path: "${variables.scripts_dir}/auto_farming.exe"
+        arguments: ["--mode", "aggressive"]
+        depends_on: ["daily_quests.py"]
+        conditions:
+          all_of:
+            - type: "process_running"
+              process_name: "ExampleGame.exe"
+            - type: "window_exists"
+              window_title: "ExampleGame*"
+        completion:
+          any_of:
+            - type: "timeout"
+              seconds: 7200  # 2小时
+            - type: "image_detected"
+              template: "templates/farming_complete.png"
+
+  # 适配器序列工作流
+  - name: "复杂适配器序列"
+    type: "adapter_sequence"
+    script_framework:
+      path: "${variables.scripts_dir}/framework_launcher.py"
+      arguments: ["--config", "framework_config.json"]
+      startup_wait: 10
+    game_config:
+      executable: "${variables.game_path}"
+      arguments: ["-fullscreen"]
+    automation_steps:
+      - type: "wait"
+        seconds: 5.0
+        delay: 1.0
+      - type: "click"
+        template: "play_button"
+        delay: 2.0
+      - type: "click"
+        x: 400
+        y: 300
+        delay: 1.0
+      - type: "type_text"
+        text: "${variables.account}"
+        interval: 0.1
+        delay: 0.5
+      - type: "key_press"
+        key: "tab"
+        delay: 0.5
+      - type: "type_text"
+        text: "password123"
+        interval: 0.1
+        delay: 1.0
+      - type: "key_press"
+        key: "enter"
+
+  # 计划工作流（使用调度器）
+  - name: "计划任务"
+    type: "scheduled"
+    tasks:
+      - name: "备份存档"
+        type: "script"
+        func: "backup_savegame"
+        args: ["./savegames/", "./backups/"]
+        priority: 1
+        timeout: 300
+      - name: "检查更新"
+        type: "script"
+        func: "check_game_updates"
+        priority: 2
+        dependencies: ["备份存档"]
+        timeout: 60
+      - name: "启动游戏"
+        type: "game_action"
+        func: "launch_game"
+        kwargs: {"game": "example_game"}
+        priority: 0
+        dependencies: ["检查更新"]
+
+# 监控配置
+monitors:
+  performance_monitor:
+    type: "performance"
+    config:
+      cpu_max: 80
+      memory_max: 85
+      disk_max: 90
+    actions:
+      - type: "log"
+        message: "Performance alert triggered"
+      - type: "throttle_scripts"
+        factor: 0.5
+
+  window_monitor:
+    type: "window"
+    config:
+      title: "ExampleGame*"
+      expected_state: "active"
+    actions:
+      - type: "focus_window"
+      - type: "take_screenshot"
+
+# 图像模板定义
+image_templates:
+  login_button: "templates/login_button.png"
+  play_button: "templates/play_button.png"
+  quest_complete: "templates/quest_complete.png"
+  farming_complete: "templates/farming_complete.png"
+  main_menu: "templates/main_menu.png"
+  character_select: "templates/character_select.png"
+
+# 插件配置
+plugins:
+  enabled:
+    - "performance_optimizer"
+    - "resource_monitor"
+    - "auto_recovery"
+  
+  config:
+    performance_optimizer:
+      enabled: true
+      threshold: 80
+    resource_monitor:
+      enabled: true
+      check_interval: 5
+    auto_recovery:
+      enabled: true
+      max_retries: 3
+      retry_delay: 10

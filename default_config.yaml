@@ -1,0 +1,28 @@
+adapters: []
+core:
+  debug_mode: false
+  log_file: null
+  log_level: INFO
+  max_workers: 4
+  temp_dir: ./temp
+game:
+  bettergi_path: null
+  bettergi_workflow:
+    steps: []
+  check_interval: 30
+  close_after_completion: true
+  game_name: Genshin Impact
+  genshin_path: null
+  image_templates:
+    automation_complete: null
+    blue_play_btn: null
+    dragon_btn_after: null
+    dragon_btn_before: null
+    general_dragon_btn: null
+    general_play_btn: null
+    general_start_btn: null
+    initial_start_btn: null
+  templates_path: templates
+  timeout: 3600
+project_name: ScriptZero
+version: '1.0'

@@ -1,0 +1,220 @@
+请将所有适配器文件移动到标准化目录结构中：
+
+当前问题：适配器文件分散在各处（根目录、adapter_launchers/、单独文件）
+
+目标结构：
+src/adapters/
+├── __init__.py                # 适配器工厂和注册
+├── base.py                    # 抽象基类
+├── script_adapters/          # 脚本适配器
+│   ├── python_adapter.py
+│   ├── exe_adapter.py
+│   └── ahk_adapter.py
+├── game_adapters/            # 游戏适配器
+│   ├── base_game_adapter.py
+│   ├── genshin_adapter.py    # 原神适配器
+│   └── bettergi_adapter.py   # BetterGI适配器
+├── communication/            # 通信适配器
+└── protocol/                # 协议适配器
+
+任务：
+1. 创建 src/adapters/ 目录结构
+2. 将 genshin_bettergi_adapter.py 移动到 src/adapters/game_adapters/genshin_bettergi.py
+3. 统一适配器接口：所有适配器继承 BaseAdapter
+4. 创建适配器注册机制：自动发现并加载适配器
+
+请重构配置系统，使用单一配置源和强类型验证：
+目标方案：
+1. 使用 Pydantic 定义配置模型：
+   src/config/
+   ├── models.py              # 配置数据模型
+   ├── validators.py          # 自定义验证器
+   └── loader.py              # 配置加载器
+
+2. 简化配置格式：
+   基础配置（必须） + 适配器配置（插件式）
+
+3. 实现配置继承和覆盖：
+   base_config.yaml ← game_specific.yaml ← user_override.yaml
+
+具体任务：
+- 创建统一的 Configuration 类，支持 .from_yaml()、.from_dict()
+- 为 GenshinBetterGI 创建专用配置模型
+- 添加配置验证：检查模板文件存在性、路径有效性
+- 实现配置热重载功能
+
+请整理和精简项目文档：
+
+当前问题：
+- 文档分散（README.md、各个适配器的说明）
+- 文档内容重复
+- 部分文档已过时
+
+目标结构：
+docs/
+├── QUICK_START.md           # 5分钟快速开始
+├── USER_GUIDE.md           # 用户手册
+├── DEVELOPER_GUIDE.md      # 开发者指南
+├── ADAPTERS/
+│   ├── Genshin_BetterGI.md
+│   └── Creating_Adapters.md
+├── CONFIGURATION.md        # 配置说明
+└── FAQ.md                  # 常见问题
+
+任务：
+1. 合并重复的配置说明
+2. 将 genshin_bettergi 的说明移动到 docs/ADAPTERS/Genshin_BetterGI.md
+3. 删除过时的测试文档
+4. 创建标准化的适配器文档模板
+
+请重构代码，实现核心框架与适配器的完全解耦：
+
+当前问题：
+- 核心逻辑与适配器逻辑混合
+- 硬编码的游戏特定逻辑
+- 依赖注入不清晰
+
+解决方案：
+1. 定义清晰的接口层：
+   src/core/interfaces/
+   ├── IGameAdapter.py
+   ├── IScriptAdapter.py
+   └── IMonitor.py
+
+2. 使用依赖注入容器：
+   src/core/container.py
+   - 注册所有适配器实例
+   - 管理生命周期
+   - 提供统一的访问接口
+
+3. 事件驱动架构：
+   - 适配器通过事件总线通信
+   - 核心不直接调用适配器方法
+
+具体任务：
+- 将 genshin_bettergi_adapter 中的核心逻辑抽象为接口
+- 创建 AdapterFactory 统一创建适配器
+- 移除核心代码中对特定游戏的硬编码引用
+
+
+请创建统一的任务执行引擎，替代分散的执行逻辑：
+
+当前问题：
+- 多个启动脚本（genshin_automation_starter.py, quick_genshin_start.py等）
+- 执行逻辑重复
+- 错误处理不一致
+
+目标架构：
+src/core/engine/
+├── task_scheduler.py       # 任务调度器
+├── execution_context.py    # 执行上下文
+├── error_handler.py        # 统一错误处理
+└── result_collector.py     # 结果收集
+
+功能要求：
+1. 支持任务队列和优先级
+2. 任务依赖关系管理
+3. 超时控制和重试机制
+4. 执行状态持久化
+
+任务：
+- 创建 Task 基类，所有适配器任务继承此类
+- 实现 ExecutionEngine.execute(task_list)
+- 统一的进度报告和日志记录
+- 集成现有的 genshin_bettergi 工作流
+
+
+请简化配置文件，提供分层配置方案：
+
+当前问题：配置复杂，字段众多，学习曲线陡峭
+
+目标方案：三级配置系统
+1. 基础配置（3-5个关键参数）
+2. 适配器配置（按需添加）
+3. 高级配置（专家模式）
+
+示例简化：
+# 基础配置（新手友好）
+game: "Genshin Impact"
+adapter: "bettergi"
+script: "daily_tasks.py"
+
+# 适配器自动填充其他配置
+
+具体任务：
+1. 创建 ConfigSimplifier 类，自动生成完整配置
+2. 提供配置向导：交互式配置生成
+3. 支持配置模板：一键导入预定义配置
+4. 配置验证和修复建议
+
+请创建统一的 CLI 接口，替代多个启动脚本：
+
+目标：一个命令管理所有功能
+scriptzero [command] [options]
+
+命令设计：
+scriptzero start <config>    # 启动自动化
+scriptzero stop <task_id>    # 停止任务
+scriptzero status           # 查看状态
+scriptzero list-adapters    # 列出可用适配器
+scriptzero config wizard    # 配置向导
+scriptzero config validate  # 验证配置
+scriptzero plugin install   # 安装插件
+
+具体实现：
+1. 使用 Click 或 Typer 创建 CLI
+2. 所有现有功能整合到 CLI 中
+3. 统一的日志输出和错误格式
+4. 支持配置文件自动发现
+
+替换方案：
+- 删除 genshin_automation_starter.py
+- 删除 quick_genshin_start.py
+- 所有功能通过 scriptzero 命令访问
+
+
+请重新设计 GUI，只实现核心功能，移除华而不实的功能：
+
+当前问题：GUI界面功能不完整，很多按钮无效
+
+最小可行功能：
+1. 配置管理（加载、保存、编辑）
+2. 任务控制（启动、停止、暂停）
+3. 实时监控（日志、状态）
+4. 结果查看（报告、截图）
+
+技术方案：
+方案A：基于现有 UI 框架，简化界面
+方案B：改用 Web 技术（FastAPI + Vue），更易维护
+
+具体任务：
+1. 评估当前 GUI 代码，标记无效功能
+2. 创建最小功能原型
+3. 逐步添加高级功能
+4. 确保与 CLI 功能一致
+
+请为项目创建统一的测试框架：
+
+当前问题：测试分散，无统一标准
+
+目标测试结构：
+tests/
+├── unit/                    # 单元测试
+│   ├── adapters/
+│   ├── core/
+│   └── utils/
+├── integration/            # 集成测试
+│   ├── genshin_bettergi/
+│   └── workflow/
+└── conftest.py            # 测试配置
+
+测试要求：
+1. 适配器接口测试：确保所有适配器符合接口规范
+2. 配置加载测试：验证配置文件的正确性
+3. 图像识别测试：模板匹配准确性
+4. 工作流执行测试：完整流程验证
+
+具体任务：
+- 为 genshin_bettergi 适配器创建完整测试
+- 覆盖率报告（至少 70%）
+- 性能基准测试

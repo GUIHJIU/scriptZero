@@ -1,0 +1,1049 @@
+# ScriptZero 多配置与GUI可用性改进方案
+
+基于您的补充需求，我将提供**系统性的改进方案**，重点关注**多配置管理、GUI可用性、配置系统统一化**三大核心问题。
+
+## 一、多配置系统设计
+
+### **1. 多配置架构设计**
+
+#### **需求分析**
+```
+当前问题：只能执行单个配置，无法管理多个游戏/脚本组合
+用户期望：
+  1. 批量管理多个自动化任务
+  2. 任务间的依赖关系（顺序/并发）
+  3. 优先级调度
+  4. 资源冲突检测（同一时间不能运行两个游戏实例）
+```
+
+#### **解决方案：项目(Project) + 任务(Task) 两层结构**
+```python
+# 新的配置模型结构
+class ProjectConfig(BaseModel):
+    """项目配置 - 包含多个任务"""
+    version: str = "2.0"
+    name: str = "我的游戏自动化项目"
+    description: Optional[str] = None
+    settings: ProjectSettings = Field(default_factory=ProjectSettings)
+    
+    # 任务列表 - 支持顺序/并行执行
+    tasks: List[TaskConfig] = []
+    
+    # 任务关系图 (DAG - 有向无环图)
+    dependencies: Dict[str, List[str]] = {}  # task_id -> [依赖的任务id列表]
+    
+    # 执行策略
+    execution_strategy: Literal["sequential", "parallel", "dag"] = "sequential"
+    max_parallel: int = 1  # 最大并行数
+    
+    class Config:
+        json_schema_extra = {
+            "ui": {
+                "tasks": {
+                    "widget": "task_list",
+                    "editable": True
+                },
+                "dependencies": {
+                    "widget": "dependency_graph"
+                }
+            }
+        }
+```
+
+#### **任务配置模型**
+```python
+class TaskConfig(BaseModel):
+    """单个任务配置"""
+    id: str = Field(default_factory=lambda: f"task_{uuid.uuid4().hex[:8]}")
+    name: str
+    enabled: bool = True
+    
+    # 任务类型
+    type: Literal["game", "script", "composite", "wait", "condition"] = "game"
+    
+    # 时间调度
+    schedule: Optional[ScheduleConfig] = None
+    
+    # 游戏配置（如果是游戏任务）
+    game_config: Optional[GameTaskConfig] = None
+    
+    # 脚本配置（如果是脚本任务）
+    script_config: Optional[ScriptTaskConfig] = None
+    
+    # 复合任务（包含子任务）
+    sub_tasks: List["TaskConfig"] = []  # 递归定义
+    
+    # 执行条件
+    conditions: List[ConditionConfig] = []
+    
+    # 完成条件
+    completion: CompletionConfig = Field(default_factory=CompletionConfig)
+    
+    # 错误处理
+    error_handling: ErrorHandlingConfig = Field(default_factory=ErrorHandlingConfig)
+    
+    # 资源限制
+    resources: ResourceRequirements = Field(default_factory=ResourceRequirements)
+
+class GameTaskConfig(BaseModel):
+    """游戏任务配置"""
+    game_id: str  # 引用 games 配置
+    startup: StartupConfig
+    monitoring: MonitoringConfig
+    shutdown: ShutdownConfig
+
+class ScriptTaskConfig(BaseModel):
+    """脚本任务配置"""
+    adapter: str  # 适配器类型
+    script_path: str
+    arguments: Dict[str, Any] = {}
+    env_vars: Dict[str, str] = {}
+```
+
+### **2. 多配置执行引擎**
+
+#### **任务执行器设计**
+```python
+class MultiTaskExecutor:
+    """多任务执行引擎"""
+    
+    async def execute_project(self, project_config: ProjectConfig):
+        """执行整个项目"""
+        
+        # 1. 构建执行图
+        execution_graph = self.build_execution_graph(project_config)
+        
+        # 2. 资源检查
+        await self.check_resource_constraints(project_config)
+        
+        # 3. 根据策略执行
+        if project_config.execution_strategy == "sequential":
+            await self.execute_sequential(execution_graph)
+        elif project_config.execution_strategy == "parallel":
+            await self.execute_parallel(execution_graph, project_config.max_parallel)
+        elif project_config.execution_strategy == "dag":
+            await self.execute_dag(execution_graph)
+    
+    def build_execution_graph(self, project_config: ProjectConfig):
+        """构建任务执行图"""
+        tasks = {task.id: task for task in project_config.tasks}
+        
+        # 创建图结构
+        graph = nx.DiGraph()
+        
+        for task_id, task in tasks.items():
+            graph.add_node(task_id, task=task)
+            
+            # 添加依赖边
+            if task_id in project_config.dependencies:
+                for dep_id in project_config.dependencies[task_id]:
+                    if dep_id in tasks:
+                        graph.add_edge(dep_id, task_id)  # dep_id 必须在 task_id 之前执行
+        
+        return graph
+    
+    async def execute_dag(self, graph):
+        """DAG执行 - 拓扑排序"""
+        try:
+            # 拓扑排序
+            execution_order = list(nx.topological_sort(graph))
+            
+            # 分组：同一层级的任务可以并行
+            layers = []
+            current_layer = []
+            
+            for task_id in execution_order:
+                # 检查所有前置任务是否完成
+                predecessors = list(graph.predecessors(task_id))
+                if all(pred in current_layer for pred in predecessors):
+                    current_layer.append(task_id)
+                else:
+                    layers.append(current_layer)
+                    current_layer = [task_id]
+            
+            if current_layer:
+                layers.append(current_layer)
+            
+            # 按层执行
+            for layer in layers:
+                # 并行执行同一层的任务
+                tasks = [self.execute_task(graph.nodes[task_id]['task']) 
+                        for task_id in layer]
+                await asyncio.gather(*tasks)
+                
+        except nx.NetworkXUnfeasible:
+            raise CircularDependencyError("任务依赖关系存在循环依赖")
+```
+
+### **3. 配置文件示例**
+
+#### **多任务项目配置文件**
+```yaml
+# project_multi_tasks.yaml
+version: "2.0"
+name: "原神日常自动化项目"
+description: "自动化执行原神日常任务和BetterGI脚本"
+
+settings:
+  max_concurrent_games: 1  # 同一时间只能运行一个游戏实例
+  resource_thresholds:
+    cpu: 80
+    memory: 85
+
+# 定义多个游戏配置
+games:
+  genshin:
+    name: "原神"
+    executable: "F:/Genshin Impact/Genshin Impact Game/YuanShen.exe"
+    arguments: ["-windowed", "-popupwindow"]
+    window_title: "原神"
+    
+  bettergi:
+    name: "BetterGI"
+    executable: "F:/better/BetterGI.exe"
+    window_title: "更好的原神"
+
+# 定义多个脚本配置
+scripts:
+  daily_quests:
+    name: "日常任务脚本"
+    path: "scripts/daily_quests.py"
+    adapter: "python"
+    arguments:
+      mode: "all"
+      speed: "fast"
+      
+  auto_farming:
+    name: "自动刷材料脚本"
+    path: "scripts/auto_farming.exe"
+    adapter: "executable"
+    arguments:
+      loop_count: 10
+
+# 任务配置
+tasks:
+  - id: "start_bettergi"
+    name: "启动BetterGI"
+    type: "game"
+    game_config:
+      game_id: "bettergi"
+      startup:
+        wait_time: 10
+        check_window: true
+      monitoring:
+        process: true
+        window: true
+      shutdown:
+        after_completion: false
+
+  - id: "start_genshin"
+    name: "启动原神"
+    type: "game"
+    game_config:
+      game_id: "genshin"
+      startup:
+        wait_time: 30
+        check_window: true
+      monitoring:
+        process: true
+        window: true
+        image: ["templates/login_screen.png"]
+      shutdown:
+        after_completion: false
+    conditions:
+      - type: "resource_check"
+        cpu_max: 70
+
+  - id: "exec_daily_quests"
+    name: "执行日常任务"
+    type: "script"
+    script_config:
+      script_id: "daily_quests"
+    completion:
+      type: "timeout_or_image"
+      timeout: 1800  # 30分钟
+      image_template: "templates/daily_complete.png"
+    depends_on: ["start_genshin", "start_bettergi"]
+
+  - id: "exec_auto_farming"
+    name: "自动刷材料"
+    type: "script"
+    script_config:
+      script_id: "auto_farming"
+    schedule:
+      type: "daily"
+      time: "02:00"  # 凌晨2点执行
+    conditions:
+      - type: "time_window"
+        start: "01:00"
+        end: "06:00"
+    depends_on: ["exec_daily_quests"]
+
+  - id: "cleanup"
+    name: "清理任务"
+    type: "composite"
+    sub_tasks:
+      - name: "关闭游戏"
+        type: "game_action"
+        action: "shutdown"
+        game_id: "genshin"
+      - name: "关闭脚本框架"
+        type: "game_action"
+        action: "shutdown"
+        game_id: "bettergi"
+    depends_on: ["exec_auto_farming"]
+
+# 任务依赖关系
+dependencies:
+  start_bettergi: []  # 无依赖
+  start_genshin: []
+  exec_daily_quests: ["start_bettergi", "start_genshin"]
+  exec_auto_farming: ["exec_daily_quests"]
+  cleanup: ["exec_auto_farming"]
+
+# 执行策略
+execution_strategy: "dag"  # 使用DAG依赖关系
+max_parallel: 2  # 最大并行任务数
+```
+
+## 二、GUI可用性填充方案
+
+### **1. GUI功能优先级**
+
+#### **第一阶段：基础功能 (1周)**
+```
+✅ 项目文件管理 (新建/打开/保存)
+✅ 任务列表编辑 (增删改)
+✅ 简单任务配置 (游戏/脚本选择)
+✅ 依赖关系可视化 (拖拽连线)
+✅ 基础执行控制 (启动/停止/暂停)
+✅ 实时日志查看
+```
+
+#### **第二阶段：增强功能 (2周)**
+```
+✅ 时间调度配置
+✅ 条件编辑
+✅ 资源监控面板
+✅ 模板市场集成
+✅ 配置导入/导出
+```
+
+#### **第三阶段：高级功能 (3周)**
+```
+✅ 可视化工作流编辑器
+✅ 实时执行状态图
+✅ 性能分析面板
+✅ 智能配置建议
+✅ 多项目管理
+```
+
+### **2. GUI架构设计**
+
+#### **主窗口布局**
+```python
+class MainWindow(QMainWindow):
+    """主窗口 - 四面板设计"""
+    
+    def __init__(self):
+        super().__init__()
+        
+        # 中央部件 - 分割窗口
+        self.central_splitter = QSplitter(Qt.Horizontal)
+        self.setCentralWidget(self.central_splitter)
+        
+        # 左侧：项目/任务树
+        self.left_panel = self.create_left_panel()
+        self.central_splitter.addWidget(self.left_panel)
+        
+        # 中央：编辑器/监控
+        self.center_panel = self.create_center_panel()
+        self.central_splitter.addWidget(self.center_panel)
+        
+        # 右侧：属性/配置
+        self.right_panel = self.create_right_panel()
+        self.central_splitter.addWidget(self.right_panel)
+        
+        # 底部：日志/状态
+        self.bottom_panel = self.create_bottom_panel()
+        self.addDockWidget(Qt.BottomDockWidgetArea, 
+                          QDockWidget("日志", self.bottom_panel))
+        
+        # 菜单栏和工具栏
+        self.create_menubar()
+        self.create_toolbar()
+        
+        # 状态栏
+        self.statusBar().showMessage("就绪")
+    
+    def create_left_panel(self):
+        """左侧面板 - 项目树和任务列表"""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        
+        # 项目树
+        self.project_tree = QTreeWidget()
+        self.project_tree.setHeaderLabel("项目结构")
+        layout.addWidget(self.project_tree)
+        
+        # 任务列表
+        self.task_list = QListWidget()
+        self.task_list.setDragDropMode(QAbstractItemView.InternalMove)
+        layout.addWidget(self.task_list)
+        
+        return panel
+    
+    def create_center_panel(self):
+        """中央面板 - 标签页容器"""
+        tab_widget = QTabWidget()
+        
+        # 工作流编辑器标签
+        self.workflow_editor = WorkflowEditor()
+        tab_widget.addTab(self.workflow_editor, "工作流")
+        
+        # 实时监控标签
+        self.monitor_panel = MonitorPanel()
+        tab_widget.addTab(self.monitor_panel, "监控")
+        
+        # 执行状态标签
+        self.execution_panel = ExecutionPanel()
+        tab_widget.addTab(self.execution_panel, "执行状态")
+        
+        return tab_widget
+    
+    def create_right_panel(self):
+        """右侧面板 - 属性编辑器"""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        
+        # 属性编辑器
+        self.property_editor = PropertyEditor()
+        layout.addWidget(self.property_editor)
+        
+        # 配置预览
+        self.config_preview = ConfigPreview()
+        layout.addWidget(self.config_preview)
+        
+        return panel
+    
+    def create_bottom_panel(self):
+        """底部面板 - 日志和状态"""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        
+        # 日志显示
+        self.log_view = LogView()
+        layout.addWidget(self.log_view)
+        
+        # 状态栏
+        self.status_widget = StatusWidget()
+        layout.addWidget(self.status_widget)
+        
+        return panel
+```
+
+### **3. 工作流可视化编辑器**
+
+```python
+class WorkflowEditor(QWidget):
+    """可视化工作流编辑器"""
+    
+    def __init__(self):
+        super().__init__()
+        self.scene = QGraphicsScene()
+        self.view = QGraphicsView(self.scene)
+        
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.view)
+        
+        # 工具箱
+        self.create_toolbox()
+        
+        # 节点图元
+        self.nodes = {}
+        self.connections = {}
+        
+        # 设置场景
+        self.scene.setSceneRect(-1000, -1000, 2000, 2000)
+        self.view.setRenderHint(QPainter.Antialiasing)
+        
+        # 连接信号
+        self.scene.selectionChanged.connect(self.on_selection_changed)
+    
+    def create_toolbox(self):
+        """创建节点工具箱"""
+        toolbox = QToolBar("节点")
+        
+        node_types = [
+            ("游戏", "game", QIcon(":/icons/game.png")),
+            ("脚本", "script", QIcon(":/icons/script.png")),
+            ("条件", "condition", QIcon(":/icons/condition.png")),
+            ("等待", "wait", QIcon(":/icons/wait.png")),
+            ("并行", "parallel", QIcon(":/icons/parallel.png")),
+        ]
+        
+        for name, node_type, icon in node_types:
+            action = QAction(icon, name, self)
+            action.setData(node_type)
+            action.triggered.connect(lambda checked, t=node_type: self.add_node(t))
+            toolbox.addAction(action)
+    
+    def add_node(self, node_type):
+        """添加节点到场景"""
+        node = WorkflowNode(node_type)
+        node.setPos(self.view.mapToScene(self.view.viewport().rect().center()))
+        self.scene.addItem(node)
+        self.nodes[node.id] = node
+        
+        # 连接信号
+        node.positionChanged.connect(self.update_connections)
+        node.connectionRequested.connect(self.start_connection)
+```
+
+### **4. 配置编辑器组件**
+
+```python
+class PropertyEditor(QWidget):
+    """属性编辑器 - 动态生成编辑表单"""
+    
+    def __init__(self):
+        super().__init__()
+        self.layout = QFormLayout(self)
+        self.current_config = None
+        
+        # 注册字段类型映射
+        self.field_widgets = {
+            "string": self.create_string_field,
+            "integer": self.create_integer_field,
+            "boolean": self.create_boolean_field,
+            "choice": self.create_choice_field,
+            "filepath": self.create_filepath_field,
+            "array": self.create_array_field,
+            "object": self.create_object_field,
+        }
+    
+    def load_config(self, config_schema):
+        """根据JSON Schema动态生成表单"""
+        self.clear()
+        self.current_config = config_schema
+        
+        # 遍历属性
+        for prop_name, prop_schema in config_schema.get("properties", {}).items():
+            widget = self.create_field_widget(prop_name, prop_schema)
+            if widget:
+                self.layout.addRow(prop_name, widget)
+    
+    def create_field_widget(self, prop_name, prop_schema):
+        """创建字段编辑部件"""
+        field_type = prop_schema.get("type", "string")
+        widget_factory = self.field_widgets.get(field_type)
+        
+        if widget_factory:
+            return widget_factory(prop_name, prop_schema)
+        return None
+    
+    def create_string_field(self, prop_name, prop_schema):
+        """创建字符串字段"""
+        line_edit = QLineEdit()
+        
+        # 设置默认值
+        if "default" in prop_schema:
+            line_edit.setText(str(prop_schema["default"]))
+        
+        # 设置占位符
+        if "description" in prop_schema:
+            line_edit.setPlaceholderText(prop_schema["description"])
+        
+        # 验证器
+        if "pattern" in prop_schema:
+            regex = QRegExp(prop_schema["pattern"])
+            validator = QRegExpValidator(regex, line_edit)
+            line_edit.setValidator(validator)
+        
+        return line_edit
+```
+
+### **5. 实时监控面板**
+
+```python
+class MonitorPanel(QWidget):
+    """实时监控面板"""
+    
+    def __init__(self):
+        super().__init__()
+        
+        # 创建网格布局
+        grid = QGridLayout(self)
+        
+        # 游戏画面预览
+        self.game_preview = GamePreviewWidget()
+        grid.addWidget(self.game_preview, 0, 0, 2, 1)
+        
+        # 资源监控
+        self.resource_monitor = ResourceMonitorWidget()
+        grid.addWidget(self.resource_monitor, 0, 1)
+        
+        # 进程监控
+        self.process_monitor = ProcessMonitorWidget()
+        grid.addWidget(self.process_monitor, 1, 1)
+        
+        # 执行时间线
+        self.timeline = ExecutionTimelineWidget()
+        grid.addWidget(self.timeline, 2, 0, 1, 2)
+        
+        # 定时更新
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_monitoring)
+        self.update_timer.start(1000)  # 1秒更新一次
+    
+    def update_monitoring(self):
+        """更新监控数据"""
+        # 获取系统状态
+        cpu_percent = psutil.cpu_percent()
+        memory_info = psutil.virtual_memory()
+        
+        # 更新资源监控
+        self.resource_monitor.update_data(cpu_percent, memory_info.percent)
+        
+        # 更新进程监控
+        processes = self.get_monitored_processes()
+        self.process_monitor.update_processes(processes)
+        
+        # 更新游戏画面
+        if self.game_preview.is_capturing:
+            screenshot = self.capture_game_screen()
+            self.game_preview.update_screenshot(screenshot)
+```
+
+## 三、统一配置系统设计
+
+### **1. 配置系统架构**
+
+#### **三层配置架构**
+```
+1. 框架默认配置 (不可修改)
+   - 定义所有可配置项的默认值
+   - 提供配置验证规则
+   
+2. 项目基础配置 (可继承)
+   - 每个项目的基础设置
+   - 可以被任务配置覆盖
+   
+3. 任务特定配置 (最高优先级)
+   - 单个任务的详细配置
+   - 继承并覆盖项目配置
+```
+
+#### **配置类设计**
+```python
+class UnifiedConfigSystem:
+    """统一配置系统"""
+    
+    def __init__(self):
+        # 配置源管理
+        self.sources = {
+            "default": self.load_default_config(),
+            "global": self.load_global_config(),
+            "project": None,
+            "task": {}
+        }
+        
+        # 配置缓存
+        self.cache = {}
+        
+        # 配置监听器
+        self.listeners = {}
+    
+    def get_config(self, path: str, task_id: str = None) -> Any:
+        """获取配置值（支持优先级合并）"""
+        # 解析路径，如 "game.startup.timeout"
+        parts = path.split(".")
+        
+        # 按优先级查找
+        sources_order = ["task", "project", "global", "default"]
+        if task_id:
+            sources_order.insert(0, f"task.{task_id}")
+        
+        for source_key in sources_order:
+            source = self.get_source(source_key)
+            if source:
+                value = self.get_nested_value(source, parts)
+                if value is not None:
+                    return value
+        
+        return None
+    
+    def set_config(self, path: str, value: Any, 
+                  scope: Literal["task", "project", "global"] = "task",
+                  task_id: str = None):
+        """设置配置值"""
+        # 验证配置值
+        schema = self.get_schema_for_path(path)
+        if schema:
+            validated = self.validate_value(value, schema)
+            if not validated.valid:
+                raise ConfigValidationError(validated.errors)
+        
+        # 设置值
+        target = self.get_target_scope(scope, task_id)
+        self.set_nested_value(target, path.split("."), value)
+        
+        # 通知监听器
+        self.notify_listeners(path, value, scope, task_id)
+    
+    def merge_configs(self, base: Dict, override: Dict) -> Dict:
+        """深度合并配置"""
+        result = base.copy()
+        
+        for key, value in override.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = self.merge_configs(result[key], value)
+            else:
+                result[key] = value
+        
+        return result
+```
+
+### **2. 配置模式定义**
+
+#### **配置模式系统**
+```python
+class ConfigPattern:
+    """配置模式 - 定义可重用的配置模板"""
+    
+    def __init__(self, name: str, schema: Dict, defaults: Dict = None):
+        self.name = name
+        self.schema = schema
+        self.defaults = defaults or {}
+    
+    def apply(self, config: Dict) -> Dict:
+        """应用模式到配置"""
+        # 应用默认值
+        result = self.merge_defaults(config)
+        
+        # 验证配置
+        self.validate(result)
+        
+        return result
+    
+    def validate(self, config: Dict) -> ValidationResult:
+        """验证配置是否符合模式"""
+        validator = ConfigValidator(self.schema)
+        return validator.validate(config)
+
+# 预定义模式
+CONFIG_PATTERNS = {
+    "genshin_bettergi": ConfigPattern(
+        name="原神+BetterGI",
+        schema=GenshinBetterGISchema,
+        defaults={
+            "game": {
+                "executable": "",
+                "arguments": ["-windowed", "-popupwindow"],
+                "window_title": "原神"
+            },
+            "bettergi": {
+                "window_title": "更好的原神"
+            },
+            "automation": {
+                "click_method": "pydirectinput",
+                "wait_time": 2
+            }
+        }
+    ),
+    
+    "game_with_script": ConfigPattern(
+        name="游戏+脚本",
+        schema=GameScriptSchema,
+        defaults={
+            "execution": {
+                "timeout": 3600,
+                "retry": 3
+            }
+        }
+    ),
+    
+    "scheduled_task": ConfigPattern(
+        name="计划任务",
+        schema=ScheduledTaskSchema,
+        defaults={
+            "schedule": {
+                "type": "daily",
+                "time": "02:00"
+            }
+        }
+    )
+}
+```
+
+### **3. 配置继承和覆盖**
+
+#### **配置文件结构**
+```yaml
+# config_base.yaml - 基础配置
+version: "2.0"
+config_version: "1"
+
+base_settings:
+  logging:
+    level: "INFO"
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  monitoring:
+    interval: 1.0
+    enabled: true
+  
+  execution:
+    max_parallel: 2
+    timeout: 86400  # 24小时
+
+# 适配器默认配置
+adapters:
+  python:
+    interpreter: "python"
+    venv_path: null
+    
+  executable:
+    admin_required: false
+    
+  autohotkey:
+    interpreter: "AutoHotkey.exe"
+
+# 游戏通用配置
+games:
+  default:
+    startup:
+      wait_time: 30
+      check_interval: 1
+    shutdown:
+      timeout: 60
+
+# config_project.yaml - 项目配置
+extends: "config_base.yaml"
+
+project:
+  name: "我的游戏自动化"
+  author: "用户"
+  
+  games:
+    genshin:
+      extends: "games.default"
+      executable: "F:/Genshin Impact/Genshin Impact Game/YuanShen.exe"
+      window_title: "原神"
+      
+    bettergi:
+      extends: "games.default"
+      executable: "F:/better/BetterGI.exe"
+      window_title: "更好的原神"
+
+# config_task.yaml - 任务配置
+extends: "config_project.yaml"
+
+tasks:
+  daily_quests:
+    name: "日常任务"
+    type: "composite"
+    
+    sub_tasks:
+      - name: "启动BetterGI"
+        type: "game"
+        game: "bettergi"
+        overrides:
+          startup:
+            wait_time: 10  # 覆盖基础配置
+        
+      - name: "启动原神"
+        type: "game"
+        game: "genshin"
+        depends_on: ["启动BetterGI"]
+        
+      - name: "执行脚本"
+        type: "script"
+        script: "scripts/daily.py"
+        adapter: "python"
+        depends_on: ["启动原神"]
+```
+
+### **4. 配置验证系统**
+
+```python
+class ConfigValidator:
+    """统一的配置验证器"""
+    
+    def __init__(self):
+        # 注册验证规则
+        self.rules = {
+            "file_exists": self.validate_file_exists,
+            "dir_exists": self.validate_dir_exists,
+            "regex_match": self.validate_regex_match,
+            "range_check": self.validate_range,
+            "dependency_check": self.validate_dependencies,
+            "resource_check": self.validate_resources,
+        }
+    
+    def validate(self, config: Dict, schema: Dict = None) -> ValidationResult:
+        """验证配置"""
+        errors = []
+        warnings = []
+        
+        # 使用提供的schema或默认schema
+        validation_schema = schema or self.get_schema_for_config(config)
+        
+        # 验证每个字段
+        for field_path, field_schema in validation_schema.items():
+            value = self.get_value_by_path(config, field_path)
+            result = self.validate_field(value, field_schema, field_path)
+            
+            if not result.valid:
+                errors.extend(result.errors)
+            if result.warnings:
+                warnings.extend(result.warnings)
+        
+        return ValidationResult(
+            valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            suggestions=self.generate_suggestions(config, errors)
+        )
+    
+    def validate_field(self, value, schema, field_path):
+        """验证单个字段"""
+        errors = []
+        
+        # 类型检查
+        expected_type = schema.get("type")
+        if expected_type and not self.check_type(value, expected_type):
+            errors.append(f"字段 '{field_path}' 类型错误: 期望 {expected_type}, 实际 {type(value)}")
+        
+        # 应用验证规则
+        for rule_name, rule_args in schema.get("rules", {}).items():
+            if rule_name in self.rules:
+                rule_func = self.rules[rule_name]
+                if not rule_func(value, rule_args):
+                    errors.append(f"字段 '{field_path}' 验证失败: {rule_name}")
+        
+        # 枚举值检查
+        if "enum" in schema and value not in schema["enum"]:
+            errors.append(f"字段 '{field_path}' 值不在允许范围内: {value}")
+        
+        return ValidationResult(valid=len(errors) == 0, errors=errors)
+```
+
+### **5. 配置迁移工具**
+
+```python
+class ConfigMigrator:
+    """配置迁移工具 - 处理版本升级"""
+    
+    MIGRATION_PATHS = {
+        "1.0": ["1.1", "2.0"],  # 从1.0可以迁移到1.1或2.0
+        "1.1": ["2.0"],
+        "2.0": ["2.1"]  # 当前版本
+    }
+    
+    def migrate(self, config_path: str, target_version: str) -> str:
+        """迁移配置文件到目标版本"""
+        # 加载原始配置
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        # 获取当前版本
+        current_version = config.get("version", "1.0")
+        
+        # 检查是否可以迁移
+        if not self.can_migrate(current_version, target_version):
+            raise MigrationError(f"无法从版本 {current_version} 迁移到 {target_version}")
+        
+        # 执行迁移步骤
+        migration_steps = self.get_migration_steps(current_version, target_version)
+        
+        for step in migration_steps:
+            config = step.execute(config)
+        
+        # 更新版本号
+        config["version"] = target_version
+        
+        # 保存新配置
+        new_path = config_path.replace(".yaml", f"_v{target_version}.yaml")
+        with open(new_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, sort_keys=False)
+        
+        return new_path
+    
+    def can_migrate(self, from_version: str, to_version: str) -> bool:
+        """检查是否可以迁移"""
+        # 检查直接迁移路径
+        if to_version in self.MIGRATION_PATHS.get(from_version, []):
+            return True
+        
+        # 检查间接路径（通过中间版本）
+        for intermediate in self.MIGRATION_PATHS.get(from_version, []):
+            if self.can_migrate(intermediate, to_version):
+                return True
+        
+        return False
+```
+
+## 四、实施路线图
+
+### **第一阶段：基础重构 (1-2周)**
+1. **创建新的配置模型** (`src/config/v2_models.py`)
+2. **实现配置加载器** 支持多版本
+3. **创建配置迁移工具** 从v1迁移到v2
+4. **更新CLI** 支持多配置
+
+### **第二阶段：GUI重写 (2-3周)**
+1. **创建主窗口框架** 四面板设计
+2. **实现项目/任务树**
+3. **创建属性编辑器**
+4. **实现基础执行控制**
+
+### **第三阶段：多配置引擎 (2周)**
+1. **实现多任务执行器**
+2. **添加任务依赖关系**
+3. **实现资源冲突检测**
+4. **创建调度系统**
+
+### **第四阶段：高级功能 (3-4周)**
+1. **可视化工作流编辑器**
+2. **实时监控面板**
+3. **模板市场系统**
+4. **智能配置建议**
+
+## 五、关键成功指标
+
+完成这些改进后，ScriptZero应该达到：
+
+### **配置系统**
+```
+✅ 支持多项目、多任务配置
+✅ 配置继承和覆盖
+✅ 配置验证和迁移
+✅ 版本兼容性保持
+```
+
+### **GUI功能**
+```
+✅ 完整的项目/任务管理
+✅ 可视化工作流编辑
+✅ 实时监控和调试
+✅ 配置导入/导出
+```
+
+### **执行引擎**
+```
+✅ 多任务顺序/并行执行
+✅ 任务依赖关系支持
+✅ 资源冲突检测
+✅ 智能调度系统
+```
+
+### **用户体验**
+```
+✅ 10分钟内创建第一个多任务项目
+✅ 所有GUI按钮功能完整
+✅ 配置错误有明确提示
+✅ 提供预设模板
+```
+
+通过这个系统性的改进方案，ScriptZero将从一个单配置脚本执行器，转变为一个**专业的多任务游戏自动化管理平台**，真正满足用户的复杂需求。

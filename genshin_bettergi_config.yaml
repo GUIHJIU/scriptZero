@@ -1,0 +1,174 @@
+version: 1.0
+name: "原神与BetterGI自动化适配器配置"
+
+# 变量定义
+variables:
+  genshin_path: "F:\\Genshin Impact\\Genshin Impact Game\\YuanShen.exe"
+  bettergi_path: "F:\\better\\BetterGI.exe"
+  check_interval: 30
+  timeout: 7200  # 2小时
+  close_after_completion: true
+  image_confidence: 0.8  # 图像识别置信度
+
+# 游戏配置
+games:
+  genshin_impact:
+    executable: "${variables.genshin_path}"
+    window_title: "原神*"  # 可能是"原神"、"Genshin Impact"或"YuanShen"
+    detection_timeout: 60
+
+# 脚本框架配置
+script_frameworks:
+  bettergi:
+    executable: "${variables.bettergi_path}"
+    window_title: "更好的原神"  # 根据调试结果，BetterGI的实际窗口标题
+    startup_wait: 10
+
+# 图像模板定义
+image_templates:
+  # BetterGI初始启动按钮（灰色按钮，白色字体）
+  bettergi_initial_start_btn: "templates/bettergi_initial_start_btn.png"
+  # 一条龙按钮（点击前状态）
+  bettergi_dragon_btn_before: "templates/bettergi_dragon_btn_before.png"
+  # 一条龙按钮（点击后状态）- 可选
+  bettergi_dragon_btn_after: "templates/bettergi_dragon_btn_after.png"
+  # 点击一条龙后出现的蓝色启动按钮
+  bettergi_blue_play_btn: "templates/bettergi_blue_play_btn.png"
+  # 其他可能的按钮状态
+  bettergi_start_btn: "templates/bettergi_start_btn.png"  # 通用启动按钮模板
+  bettergi_dragon_btn: "templates/bettergi_dragon_btn.png"  # 通用一条龙按钮模板
+  bettergi_play_btn: "templates/bettergi_play_btn.png"  # 通用播放按钮模板
+  # 游戏相关模板
+  genshin_main_menu: "templates/genshin_main_menu.png"
+  genshin_character_select: "templates/genshin_character_select.png"
+  # 自动化完成标志
+  automation_complete: "templates/automation_complete.png"
+  genshin_login_screen: "templates/genshin_login_screen.png"
+
+# 适配器序列工作流
+workflow:
+  # 主要自动化工作流
+  - name: "原神BetterGI自动化流程"
+    type: "adapter_sequence"
+    enabled: true
+    adapter_type: "genshin_bettergi"
+    config:
+      genshin_path: "${variables.genshin_path}"
+      bettergi_path: "${variables.bettergi_path}"
+      check_interval: "${variables.check_interval}"
+      timeout: "${variables.timeout}"
+      close_after_completion: "${variables.close_after_completion}"
+      image_confidence: "${variables.image_confidence}"
+      click_positions:
+        # 以下是备用坐标，优先使用图像识别
+        initial_start_button: [150, 200]      # 初始启动按钮坐标
+        dragon_button_before: [250, 150]      # 一条龙按钮（点击前）坐标
+        blue_play_button: [350, 150]          # 蓝色三角形启动按钮坐标
+      image_templates:
+        # 为不同状态定义不同的模板
+        initial_start_btn: "${image_templates.bettergi_initial_start_btn}"
+        dragon_btn_before: "${image_templates.bettergi_dragon_btn_before}"
+        dragon_btn_after: "${image_templates.bettergi_dragon_btn_after}"
+        blue_play_btn: "${image_templates.bettergi_blue_play_btn}"
+        general_start_btn: "${image_templates.bettergi_start_btn}"
+        general_dragon_btn: "${image_templates.bettergi_dragon_btn}"
+        general_play_btn: "${image_templates.bettergi_play_btn}"
+        automation_complete: "${image_templates.automation_complete}"
+        genshin_login_screen: "${image_templates.genshin_login_screen}"
+      automation_settings:
+        # 自动化设置
+        use_image_recognition_first: true  # 优先使用图像识别
+        fallback_to_coordinates: true      # 图像识别失败时使用坐标点击
+        image_match_confidence: 0.7        # 图像匹配置信度
+        max_retry_attempts: 3              # 最大重试次数
+        retry_delay: 1.0                   # 重试延迟（秒）
+      completion_detection:
+        # 完成检测设置
+        method: "image_or_timeout"         # 检测方法：image_only, timeout_only, image_or_timeout
+        image_template: "${image_templates.automation_complete}"  # 完成标志图像
+        timeout_seconds: "${variables.timeout}"  # 超时时间
+      bettergi_workflow:
+        # BetterGI工作流程配置
+        steps:
+          - name: "点击初始启动按钮"
+            action: "click"
+            templates: ["${image_templates.bettergi_initial_start_btn}", "${image_templates.bettergi_start_btn}"]  # 多个候选模板
+            fallback_coords: [150, 200]
+            delay_after: 3
+          - name: "点击一条龙按钮"
+            action: "click"
+            templates: ["${image_templates.bettergi_dragon_btn_before}", "${image_templates.bettergi_dragon_btn}"]  # 多个候选模板
+            fallback_coords: [250, 150]
+            delay_after: 5
+          - name: "等待蓝色启动按钮出现"
+            action: "wait_for_image"
+            template: "${image_templates.bettergi_blue_play_btn}"
+            timeout: 10
+            delay_after: 2
+          - name: "点击蓝色启动按钮"
+            action: "click"
+            templates: ["${image_templates.bettergi_blue_play_btn}", "${image_templates.bettergi_play_btn}"]  # 多个候选模板
+            fallback_coords: [350, 150]
+            delay_after: 2
+    actions:
+      - type: "launch_script_framework"
+        path: "${variables.bettergi_path}"
+        startup_wait: 10
+      - type: "launch_game"
+        path: "${variables.genshin_path}"
+        startup_wait: 15
+      - type: "switch_focus_and_start"
+        delay: 5
+      - type: "wait_for_completion"
+        timeout: "${variables.timeout}"
+
+# 监控配置
+monitors:
+  # 性能监控
+  performance_monitor:
+    type: "performance"
+    config:
+      cpu_max: 80
+      memory_max: 85
+      disk_max: 90
+    actions:
+      - type: "log"
+        message: "Performance alert triggered"
+      - type: "throttle_scripts"
+        factor: 0.5
+
+  # 窗口监控
+  window_monitor:
+    type: "window"
+    config:
+      title: "BetterGI*"
+      expected_state: "active"
+    actions:
+      - type: "focus_window"
+      - type: "take_screenshot"
+
+# 插件配置
+plugins:
+  enabled:
+    - "performance_optimizer"
+    - "resource_monitor"
+    - "auto_recovery"
+  
+  config:
+    performance_optimizer:
+      enabled: true
+      threshold: 80
+    resource_monitor:
+      enabled: true
+      check_interval: 5
+    auto_recovery:
+      enabled: true
+      max_retries: 3
+      retry_delay: 10
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "logs/genshin_bettergi_automation.log"
+  max_size: "10MB"
+  backup_count: 5
