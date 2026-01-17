@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                               QPushButton, QTextEdit, QLabel, QTabWidget, QFileDialog, 
                               QMessageBox, QSplitter, QListWidget, QTreeWidget, QTreeWidgetItem,
                               QGroupBox, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QComboBox,
-                              QMenuBar, QStatusBar, QToolBar, QDialog, QGridLayout, QHeaderView)
+                              QMenuBar, QStatusBar, QToolBar, QDialog, QGridLayout, QHeaderView,
+                              QListWidgetItem, QAbstractItemView)
 from PySide6.QtCore import Qt, QThread, Signal, QObject, QTimer
 from PySide6.QtGui import QAction, QIcon
 
@@ -180,13 +181,17 @@ class ModernMainWindow(QMainWindow):
         game_tab = self.create_game_config_tab()
         tab_widget.addTab(game_tab, "游戏配置")
         
-        # 工作流配置标签页
-        workflow_tab = self.create_workflow_config_tab()
-        tab_widget.addTab(workflow_tab, "工作流")
-        
         # 脚本配置标签页
         script_tab = self.create_script_config_tab()
         tab_widget.addTab(script_tab, "脚本配置")
+        
+        # 任务链配置标签页
+        task_chain_tab = self.create_task_chain_config_tab()
+        tab_widget.addTab(task_chain_tab, "任务链配置")
+        
+        # 工作流配置标签页
+        workflow_tab = self.create_workflow_config_tab()
+        tab_widget.addTab(workflow_tab, "工作流")
         
         layout.addWidget(tab_widget)
         
@@ -265,6 +270,79 @@ class ModernMainWindow(QMainWindow):
         
         return widget
     
+    def create_script_config_tab(self):
+        """创建脚本配置标签页"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        self.scripts_list = QListWidget()
+        layout.addWidget(self.scripts_list)
+        
+        buttons_layout = QHBoxLayout()
+        
+        add_script_btn = QPushButton("添加脚本")
+        add_script_btn.clicked.connect(self.add_script)
+        buttons_layout.addWidget(add_script_btn)
+        
+        edit_script_btn = QPushButton("编辑脚本")
+        edit_script_btn.clicked.connect(self.edit_script)
+        buttons_layout.addWidget(edit_script_btn)
+        
+        del_script_btn = QPushButton("删除脚本")
+        del_script_btn.clicked.connect(self.delete_script)
+        buttons_layout.addWidget(del_script_btn)
+        
+        # 添加测试脚本按钮
+        test_script_btn = QPushButton("测试脚本")
+        test_script_btn.clicked.connect(self.test_script)
+        buttons_layout.addWidget(test_script_btn)
+        
+        layout.addLayout(buttons_layout)
+        
+        return widget
+    
+    def create_task_chain_config_tab(self):
+        """创建任务链配置标签页"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        self.task_chain_tree = QTreeWidget()
+        self.task_chain_tree.setHeaderLabels(["ID", "名称", "游戏", "脚本", "依赖项", "启用"])
+        self.task_chain_tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.task_chain_tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.task_chain_tree.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.task_chain_tree.header().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.task_chain_tree.header().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.task_chain_tree.header().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        layout.addWidget(self.task_chain_tree)
+        
+        buttons_layout = QHBoxLayout()
+        
+        add_task_btn = QPushButton("添加任务")
+        add_task_btn.clicked.connect(self.add_task)
+        buttons_layout.addWidget(add_task_btn)
+        
+        edit_task_btn = QPushButton("编辑任务")
+        edit_task_btn.clicked.connect(self.edit_task)
+        buttons_layout.addWidget(edit_task_btn)
+        
+        del_task_btn = QPushButton("删除任务")
+        del_task_btn.clicked.connect(self.delete_task)
+        buttons_layout.addWidget(del_task_btn)
+        
+        # 添加上移下移按钮
+        move_up_btn = QPushButton("上移")
+        move_up_btn.clicked.connect(self.move_task_up)
+        buttons_layout.addWidget(move_up_btn)
+        
+        move_down_btn = QPushButton("下移")
+        move_down_btn.clicked.connect(self.move_task_down)
+        buttons_layout.addWidget(move_down_btn)
+        
+        layout.addLayout(buttons_layout)
+        
+        return widget
+    
     def create_workflow_config_tab(self):
         """创建工作流配置标签页"""
         widget = QWidget()
@@ -300,37 +378,6 @@ class ModernMainWindow(QMainWindow):
         move_down_btn = QPushButton("下移")
         move_down_btn.clicked.connect(self.move_workflow_down)
         buttons_layout.addWidget(move_down_btn)
-        
-        layout.addLayout(buttons_layout)
-        
-        return widget
-    
-    def create_script_config_tab(self):
-        """创建脚本配置标签页"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        self.scripts_list = QListWidget()
-        layout.addWidget(self.scripts_list)
-        
-        buttons_layout = QHBoxLayout()
-        
-        add_script_btn = QPushButton("添加脚本")
-        add_script_btn.clicked.connect(self.add_script)
-        buttons_layout.addWidget(add_script_btn)
-        
-        edit_script_btn = QPushButton("编辑脚本")
-        edit_script_btn.clicked.connect(self.edit_script)
-        buttons_layout.addWidget(edit_script_btn)
-        
-        del_script_btn = QPushButton("删除脚本")
-        del_script_btn.clicked.connect(self.delete_script)
-        buttons_layout.addWidget(del_script_btn)
-        
-        # 添加测试脚本按钮
-        test_script_btn = QPushButton("测试脚本")
-        test_script_btn.clicked.connect(self.test_script)
-        buttons_layout.addWidget(test_script_btn)
         
         layout.addLayout(buttons_layout)
         
@@ -736,7 +783,7 @@ class ModernMainWindow(QMainWindow):
         """添加游戏"""
         dialog = GameDialog(self)
         if dialog.exec_() == QDialog.Accepted:
-            name, executable, window_title = dialog.get_values()
+            name, executable, window_title, arguments, working_dir, priority, env_vars, timeout, close_after_completion = dialog.get_values()
             self.games_list.addItem(f"{name}: {executable}")
     
     def edit_game(self):
@@ -748,9 +795,9 @@ class ModernMainWindow(QMainWindow):
             if len(parts) == 2:
                 current_name, current_path = parts[0], parts[1]
                 
-                dialog = GameDialog(self, current_name, current_path, "")
+                dialog = GameDialog(self, current_name, current_path, "", "", "", "normal", "", 3600, True)
                 if dialog.exec_() == QDialog.Accepted:
-                    name, executable, window_title = dialog.get_values()
+                    name, executable, window_title, arguments, working_dir, priority, env_vars, timeout, close_after_completion = dialog.get_values()
                     self.games_list.item(selected_row).setText(f"{name}: {executable}")
         else:
             QMessageBox.warning(self, "警告", "请选择要编辑的游戏")
@@ -763,6 +810,86 @@ class ModernMainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "警告", "请选择要删除的游戏")
     
+    def add_task(self):
+        """添加任务链项"""
+        dialog = TaskChainDialog(self, self.get_available_games(), self.get_available_scripts())
+        if dialog.exec_() == QDialog.Accepted:
+            task_id, name, game, script, depends_on, enabled = dialog.get_values()
+            item = QTreeWidgetItem([task_id, name, game, script, ", ".join(depends_on) if depends_on else "", "是" if enabled else "否"])
+            self.task_chain_tree.addTopLevelItem(item)
+
+    def edit_task(self):
+        """编辑任务链项"""
+        selected = self.task_chain_tree.currentItem()
+        if selected:
+            task_id = selected.text(0)
+            name = selected.text(1)
+            game = selected.text(2)
+            script = selected.text(3)
+            depends_on = [x.strip() for x in selected.text(4).split(",")] if selected.text(4) != "" else []
+            enabled = selected.text(5) == "是"
+
+            dialog = TaskChainDialog(self, self.get_available_games(), self.get_available_scripts(), 
+                                   task_id, name, game, script, depends_on, enabled)
+            if dialog.exec_() == QDialog.Accepted:
+                task_id, name, game, script, depends_on, enabled = dialog.get_values()
+                selected.setText(0, task_id)
+                selected.setText(1, name)
+                selected.setText(2, game)
+                selected.setText(3, script)
+                selected.setText(4, ", ".join(depends_on) if depends_on else "")
+                selected.setText(5, "是" if enabled else "否")
+        else:
+            QMessageBox.warning(self, "警告", "请选择要编辑的任务")
+
+    def delete_task(self):
+        """删除任务链项"""
+        selected = self.task_chain_tree.currentItem()
+        if selected:
+            self.task_chain_tree.takeTopLevelItem(self.task_chain_tree.indexOfTopLevelItem(selected))
+        else:
+            QMessageBox.warning(self, "警告", "请选择要删除的任务")
+
+    def move_task_up(self):
+        """上移任务"""
+        selected = self.task_chain_tree.currentItem()
+        if selected:
+            index = self.task_chain_tree.indexOfTopLevelItem(selected)
+            if index > 0:
+                # 获取当前项的值
+                values = [selected.text(i) for i in range(selected.columnCount())]
+
+                # 删除当前项
+                self.task_chain_tree.takeTopLevelItem(index)
+
+                # 在新位置插入
+                new_item = QTreeWidgetItem(values)
+                self.task_chain_tree.insertTopLevelItem(index - 1, new_item)
+
+                # 重新选择该项
+                self.task_chain_tree.setCurrentItem(new_item)
+
+    def move_task_down(self):
+        """下移任务"""
+        selected = self.task_chain_tree.currentItem()
+        if selected:
+            index = self.task_chain_tree.indexOfTopLevelItem(selected)
+            total_items = self.task_chain_tree.topLevelItemCount()
+
+            if index < total_items - 1:
+                # 获取当前项的值
+                values = [selected.text(i) for i in range(selected.columnCount())]
+
+                # 删除当前项
+                self.task_chain_tree.takeTopLevelItem(index)
+
+                # 在新位置插入
+                new_item = QTreeWidgetItem(values)
+                self.task_chain_tree.insertTopLevelItem(index + 1, new_item)
+
+                # 重新选择该项
+                self.task_chain_tree.setCurrentItem(new_item)
+
     def add_workflow(self):
         """添加工作流"""
         dialog = WorkflowDialog(self)
@@ -804,7 +931,7 @@ class ModernMainWindow(QMainWindow):
         """添加脚本"""
         dialog = ScriptDialog(self)
         if dialog.exec_() == QDialog.Accepted:
-            path, script_type = dialog.get_values()
+            path, script_type, arguments, working_dir, environment_vars, timeout, completion_condition, dependencies = dialog.get_values()
             self.scripts_list.addItem(f"{path} ({script_type})")
     
     def edit_script(self):
@@ -817,9 +944,9 @@ class ModernMainWindow(QMainWindow):
                 current_path = parts[0]
                 current_type = parts[1][:-1]  # 移除末尾的 ')'
                 
-                dialog = ScriptDialog(self, current_path, current_type)
+                dialog = ScriptDialog(self, current_path, current_type, "", "", "", 3600, "", "")
                 if dialog.exec_() == QDialog.Accepted:
-                    path, script_type = dialog.get_values()
+                    path, script_type, arguments, working_dir, environment_vars, timeout, completion_condition, dependencies = dialog.get_values()
                     self.scripts_list.item(selected_row).setText(f"{path} ({script_type})")
         else:
             QMessageBox.warning(self, "警告", "请选择要编辑的脚本")
@@ -926,7 +1053,51 @@ class ModernMainWindow(QMainWindow):
             self.name_edit.setText("新自动化任务")
             self.version_combo.setCurrentText("1.0")
             self.statusBar().showMessage("配置已重置")
-    
+
+    def get_available_games(self):
+        """获取可用的游戏列表"""
+        games = []
+        for i in range(self.games_list.count()):
+            item_text = self.games_list.item(i).text()
+            parts = item_text.split(': ', 1)
+            if len(parts) == 2:
+                game_name = parts[0]
+                games.append(game_name)
+        return games
+
+    def get_available_scripts(self):
+        """获取可用的脚本列表"""
+        scripts = []
+        for i in range(self.scripts_list.count()):
+            item_text = self.scripts_list.item(i).text()
+            parts = item_text.split(' (')
+            if len(parts) == 2:
+                script_path = parts[0]
+                scripts.append(script_path)
+        return scripts
+
+    def get_game_config_details(self, game_name):
+        """获取游戏配置详细信息"""
+        # 遍历游戏列表找到匹配的游戏并返回其详细信息
+        for i in range(self.games_list.count()):
+            item_text = self.games_list.item(i).text()
+            parts = item_text.split(': ', 1)
+            if len(parts) == 2 and parts[0] == game_name:
+                # 这里我们简单地返回整个文本，实际应用中可以解析更多细节
+                return f"游戏名称: {parts[0]}\n可执行文件: {parts[1]}"
+        return f"未找到游戏: {game_name}"
+
+    def get_script_config_details(self, script_path):
+        """获取脚本配置详细信息"""
+        # 遍历脚本列表找到匹配的脚本并返回其详细信息
+        for i in range(self.scripts_list.count()):
+            item_text = self.scripts_list.item(i).text()
+            parts = item_text.split(' (')
+            if len(parts) == 2 and parts[0] == script_path:
+                script_type = parts[1][:-1]  # 移除末尾的 ')'
+                return f"脚本路径: {parts[0]}\n类型: {script_type}"
+        return f"未找到脚本: {script_path}"
+
     def export_report(self):
         """导出报告"""
         file_path, _ = QFileDialog.getSaveFileName(
@@ -987,12 +1158,16 @@ class VariableDialog(QDialog):
 
 class GameDialog(QDialog):
     """游戏配置对话框"""
-    def __init__(self, parent=None, name="", executable="", window_title=""):
+    def __init__(self, parent=None, name="", executable="", window_title="", arguments="", working_dir="", priority="normal", environment_vars="", timeout=3600, close_after_completion=True):
         super().__init__(parent)
         self.setWindowTitle("编辑游戏")
-        self.resize(500, 250)
+        self.resize(600, 500)
         
-        layout = QFormLayout(self)
+        layout = QVBoxLayout(self)
+        
+        # 基本配置组
+        basic_group = QGroupBox("基本配置")
+        basic_layout = QFormLayout(basic_group)
         
         self.name_edit = QLineEdit(name)
         self.executable_edit = QLineEdit(executable)
@@ -1005,9 +1180,54 @@ class GameDialog(QDialog):
         
         self.window_title_edit = QLineEdit(window_title)
         
-        layout.addRow("游戏名称:", self.name_edit)
-        layout.addRow("可执行文件:", executable_layout)
-        layout.addRow("窗口标题:", self.window_title_edit)
+        basic_layout.addRow("游戏名称:", self.name_edit)
+        basic_layout.addRow("可执行文件:", executable_layout)
+        basic_layout.addRow("窗口标题:", self.window_title_edit)
+        
+        layout.addWidget(basic_group)
+        
+        # 高级选项组
+        advanced_group = QGroupBox("高级选项")
+        advanced_group.setCheckable(True)  # 可折叠
+        advanced_group.setChecked(False)   # 默认折叠
+        advanced_layout = QFormLayout(advanced_group)
+        
+        # 启动参数
+        self.arguments_edit = QLineEdit(arguments)
+        advanced_layout.addRow("启动参数:", self.arguments_edit)
+        
+        # 工作目录
+        self.working_dir_edit = QLineEdit(working_dir)
+        working_dir_btn = QPushButton("浏览")
+        working_dir_btn.clicked.connect(self.browse_working_dir)
+        
+        working_dir_layout = QHBoxLayout()
+        working_dir_layout.addWidget(self.working_dir_edit)
+        working_dir_layout.addWidget(working_dir_btn)
+        advanced_layout.addRow("工作目录:", working_dir_layout)
+        
+        # 优先级
+        self.priority_combo = QComboBox()
+        self.priority_combo.addItems(["low", "normal", "high", "realtime"])
+        self.priority_combo.setCurrentText(priority)
+        advanced_layout.addRow("进程优先级:", self.priority_combo)
+        
+        # 环境变量
+        self.environment_vars_edit = QLineEdit(environment_vars)
+        advanced_layout.addRow("环境变量:", self.environment_vars_edit)
+        
+        # 超时设置
+        self.timeout_spinbox = QSpinBox()
+        self.timeout_spinbox.setRange(1, 86400)  # 1秒到24小时
+        self.timeout_spinbox.setValue(timeout)
+        advanced_layout.addRow("超时时间(秒):", self.timeout_spinbox)
+        
+        # 完成后关闭
+        self.close_after_completion_check = QCheckBox()
+        self.close_after_completion_check.setChecked(close_after_completion)
+        advanced_layout.addRow("完成后关闭:", self.close_after_completion_check)
+        
+        layout.addWidget(advanced_group)
         
         # 按钮
         buttons_layout = QHBoxLayout()
@@ -1019,7 +1239,7 @@ class GameDialog(QDialog):
         buttons_layout.addWidget(ok_btn)
         buttons_layout.addWidget(cancel_btn)
         
-        layout.addRow(buttons_layout)
+        layout.addLayout(buttons_layout)
     
     def browse_executable(self):
         """浏览可执行文件"""
@@ -1029,32 +1249,106 @@ class GameDialog(QDialog):
         if file_path:
             self.executable_edit.setText(file_path)
     
+    def browse_working_dir(self):
+        """浏览工作目录"""
+        dir_path = QFileDialog.getExistingDirectory(self, "选择工作目录", "")
+        if dir_path:
+            self.working_dir_edit.setText(dir_path)
+    
     def get_values(self):
         """获取输入的值"""
-        return self.name_edit.text(), self.executable_edit.text(), self.window_title_edit.text()
+        return (
+            self.name_edit.text(),
+            self.executable_edit.text(),
+            self.window_title_edit.text(),
+            self.arguments_edit.text(),
+            self.working_dir_edit.text(),
+            self.priority_combo.currentText(),
+            self.environment_vars_edit.text(),
+            self.timeout_spinbox.value(),
+            self.close_after_completion_check.isChecked()
+        )
 
 
 class WorkflowDialog(QDialog):
     """工作流配置对话框"""
-    def __init__(self, parent=None, name="", wf_type="", description="", enabled=True):
+    def __init__(self, parent=None, name="", wf_type="", description="", enabled=True, error_handling="continue", tasks=None):
         super().__init__(parent)
         self.setWindowTitle("编辑工作流")
-        self.resize(400, 250)
+        self.resize(800, 600)
         
-        layout = QFormLayout(self)
+        layout = QVBoxLayout(self)
+        
+        # 基本配置组
+        basic_group = QGroupBox("基本配置")
+        basic_layout = QFormLayout(basic_group)
         
         self.name_edit = QLineEdit(name)
         self.type_combo = QComboBox()
-        self.type_combo.addItems(["script_chain", "game", "mixed"])
+        self.type_combo.addItems(["script_chain", "game", "task_chain", "mixed"])
         self.type_combo.setCurrentText(wf_type)
         self.desc_edit = QLineEdit(description)
         self.enabled_check = QCheckBox()
         self.enabled_check.setChecked(enabled)
         
-        layout.addRow("名称:", self.name_edit)
-        layout.addRow("类型:", self.type_combo)
-        layout.addRow("描述:", self.desc_edit)
-        layout.addRow("启用:", self.enabled_check)
+        basic_layout.addRow("名称:", self.name_edit)
+        basic_layout.addRow("类型:", self.type_combo)
+        basic_layout.addRow("描述:", self.desc_edit)
+        basic_layout.addRow("启用:", self.enabled_check)
+        
+        layout.addWidget(basic_group)
+        
+        # 任务链配置组 - 仅在类型为task_chain时显示
+        self.task_chain_group = QGroupBox("任务链配置")
+        self.task_chain_group.setVisible(wf_type == "task_chain")
+        task_chain_layout = QVBoxLayout(self.task_chain_group)
+        
+        # 错误处理策略
+        error_handling_layout = QHBoxLayout()
+        error_handling_layout.addWidget(QLabel("错误处理:"))
+        self.error_handling_combo = QComboBox()
+        self.error_handling_combo.addItems(["continue", "stop", "retry"])
+        self.error_handling_combo.setCurrentText(error_handling)
+        error_handling_layout.addWidget(self.error_handling_combo)
+        error_handling_layout.addStretch()
+        task_chain_layout.addLayout(error_handling_layout)
+        
+        # 任务列表
+        self.tasks_tree = QTreeWidget()
+        self.tasks_tree.setHeaderLabels(["ID", "名称", "游戏", "脚本", "依赖项", "启用"])
+        self.tasks_tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.tasks_tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.tasks_tree.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.tasks_tree.header().setSectionResizeMode(3, QHeaderView.Stretch)
+        
+        task_chain_layout.addWidget(self.tasks_tree)
+        
+        # 任务操作按钮
+        task_buttons_layout = QHBoxLayout()
+        self.add_task_btn = QPushButton("添加任务")
+        self.add_task_btn.clicked.connect(self.add_task)
+        self.edit_task_btn = QPushButton("编辑任务")
+        self.edit_task_btn.clicked.connect(self.edit_task)
+        self.delete_task_btn = QPushButton("删除任务")
+        self.delete_task_btn.clicked.connect(self.delete_task)
+        self.move_up_btn = QPushButton("上移")
+        self.move_up_btn.clicked.connect(self.move_task_up)
+        self.move_down_btn = QPushButton("下移")
+        self.move_down_btn.clicked.connect(self.move_task_down)
+        
+        task_buttons_layout.addWidget(self.add_task_btn)
+        task_buttons_layout.addWidget(self.edit_task_btn)
+        task_buttons_layout.addWidget(self.delete_task_btn)
+        task_buttons_layout.addWidget(self.move_up_btn)
+        task_buttons_layout.addWidget(self.move_down_btn)
+        task_buttons_layout.addStretch()
+        
+        task_chain_layout.addLayout(task_buttons_layout)
+        
+        layout.addWidget(self.task_chain_group)
+        
+        # 连接类型变化信号
+        self.type_combo.currentTextChanged.connect(self.on_type_changed)
         
         # 按钮
         buttons_layout = QHBoxLayout()
@@ -1066,22 +1360,143 @@ class WorkflowDialog(QDialog):
         buttons_layout.addWidget(ok_btn)
         buttons_layout.addWidget(cancel_btn)
         
-        layout.addRow(buttons_layout)
+        layout.addLayout(buttons_layout)
+    
+    def on_type_changed(self, current_type):
+        """当工作流类型改变时"""
+        is_task_chain = current_type == "task_chain"
+        self.task_chain_group.setVisible(is_task_chain)
+    
+    def add_task(self):
+        """添加任务"""
+        dialog = TaskChainDialog(self, self.get_available_games(), self.get_available_scripts())
+        if dialog.exec_() == QDialog.Accepted:
+            task_id, name, game, script, depends_on, enabled = dialog.get_values()
+            item = QTreeWidgetItem([task_id, name, game, script, ", ".join(depends_on) if depends_on else "", "是" if enabled else "否"])
+            self.tasks_tree.addTopLevelItem(item)
+    
+    def edit_task(self):
+        """编辑任务"""
+        selected = self.tasks_tree.currentItem()
+        if selected:
+            task_id = selected.text(0)
+            name = selected.text(1)
+            game = selected.text(2)
+            script = selected.text(3)
+            depends_on = [x.strip() for x in selected.text(4).split(",")] if selected.text(4) != "" else []
+            enabled = selected.text(5) == "是"
+            
+            dialog = TaskChainDialog(self, self.get_available_games(), self.get_available_scripts(), 
+                                   task_id, name, game, script, depends_on, enabled)
+            if dialog.exec_() == QDialog.Accepted:
+                task_id, name, game, script, depends_on, enabled = dialog.get_values()
+                selected.setText(0, task_id)
+                selected.setText(1, name)
+                selected.setText(2, game)
+                selected.setText(3, script)
+                selected.setText(4, ", ".join(depends_on) if depends_on else "")
+                selected.setText(5, "是" if enabled else "否")
+        else:
+            QMessageBox.warning(self, "警告", "请选择要编辑的任务")
+    
+    def delete_task(self):
+        """删除任务"""
+        selected = self.tasks_tree.currentItem()
+        if selected:
+            self.tasks_tree.takeTopLevelItem(self.tasks_tree.indexOfTopLevelItem(selected))
+        else:
+            QMessageBox.warning(self, "警告", "请选择要删除的任务")
+    
+    def move_task_up(self):
+        """上移任务"""
+        selected = self.tasks_tree.currentItem()
+        if selected:
+            index = self.tasks_tree.indexOfTopLevelItem(selected)
+            if index > 0:
+                # 获取当前项的值
+                values = [selected.text(i) for i in range(selected.columnCount())]
+                
+                # 删除当前项
+                self.tasks_tree.takeTopLevelItem(index)
+                
+                # 在新位置插入
+                new_item = QTreeWidgetItem(values)
+                self.tasks_tree.insertTopLevelItem(index - 1, new_item)
+                
+                # 重新选择该项
+                self.tasks_tree.setCurrentItem(new_item)
+    
+    def move_task_down(self):
+        """下移任务"""
+        selected = self.tasks_tree.currentItem()
+        if selected:
+            index = self.tasks_tree.indexOfTopLevelItem(selected)
+            total_items = self.tasks_tree.topLevelItemCount()
+            
+            if index < total_items - 1:
+                # 获取当前项的值
+                values = [selected.text(i) for i in range(selected.columnCount())]
+                
+                # 删除当前项
+                self.tasks_tree.takeTopLevelItem(index)
+                
+                # 在新位置插入
+                new_item = QTreeWidgetItem(values)
+                self.tasks_tree.insertTopLevelItem(index + 1, new_item)
+                
+                # 重新选择该项
+                self.tasks_tree.setCurrentItem(new_item)
+    
+    def get_available_games(self):
+        """获取可用的游戏列表 - 需要从父窗口获取"""
+        if hasattr(self.parent(), 'get_available_games'):
+            return self.parent().get_available_games()
+        return []
+    
+    def get_available_scripts(self):
+        """获取可用的脚本列表 - 需要从父窗口获取"""
+        if hasattr(self.parent(), 'get_available_scripts'):
+            return self.parent().get_available_scripts()
+        return []
     
     def get_values(self):
         """获取输入的值"""
-        return (self.name_edit.text(), self.type_combo.currentText(), 
-                self.desc_edit.text(), self.enabled_check.isChecked())
+        tasks = []
+        for i in range(self.tasks_tree.topLevelItemCount()):
+            item = self.tasks_tree.topLevelItem(i)
+            depends_on = [x.strip() for x in item.text(4).split(",")] if item.text(4) != "" else []
+            task = {
+                'id': item.text(0),
+                'name': item.text(1),
+                'game': item.text(2),
+                'script': item.text(3),
+                'depends_on': depends_on,
+                'enabled': item.text(5) == "是"
+            }
+            tasks.append(task)
+        
+        return (
+            self.name_edit.text(), 
+            self.type_combo.currentText(), 
+            self.desc_edit.text(), 
+            self.enabled_check.isChecked(),
+            self.error_handling_combo.currentText(),
+            tasks
+        )
 
 
 class ScriptDialog(QDialog):
     """脚本配置对话框"""
-    def __init__(self, parent=None, path="", script_type="python"):
+    def __init__(self, parent=None, path="", script_type="python", arguments="", working_dir="", environment_vars="", timeout=3600, completion_condition="", dependencies=None):
         super().__init__(parent)
         self.setWindowTitle("编辑脚本")
-        self.resize(500, 200)
+        self.resize(600, 500)
         
-        layout = QFormLayout(self)
+        layout = QVBoxLayout(self)
+        
+        # 基本配置组
+        basic_group = QGroupBox("基本配置")
+        basic_layout = QFormLayout(basic_group)
         
         self.path_edit = QLineEdit(path)
         browse_btn = QPushButton("浏览")
@@ -1095,8 +1510,50 @@ class ScriptDialog(QDialog):
         self.type_combo.addItems(["python", "exe", "bat", "ps1", "ahk"])
         self.type_combo.setCurrentText(script_type)
         
-        layout.addRow("脚本路径:", path_layout)
-        layout.addRow("类型:", self.type_combo)
+        basic_layout.addRow("脚本路径:", path_layout)
+        basic_layout.addRow("类型:", self.type_combo)
+        
+        layout.addWidget(basic_group)
+        
+        # 高级选项组
+        advanced_group = QGroupBox("高级选项")
+        advanced_group.setCheckable(True)  # 可折叠
+        advanced_group.setChecked(False)   # 默认折叠
+        advanced_layout = QFormLayout(advanced_group)
+        
+        # 参数
+        self.arguments_edit = QLineEdit(arguments)
+        advanced_layout.addRow("参数:", self.arguments_edit)
+        
+        # 工作目录
+        self.working_dir_edit = QLineEdit(working_dir)
+        working_dir_btn = QPushButton("浏览")
+        working_dir_btn.clicked.connect(self.browse_working_dir)
+        
+        working_dir_layout = QHBoxLayout()
+        working_dir_layout.addWidget(self.working_dir_edit)
+        working_dir_layout.addWidget(working_dir_btn)
+        advanced_layout.addRow("工作目录:", working_dir_layout)
+        
+        # 环境变量
+        self.environment_vars_edit = QLineEdit(environment_vars)
+        advanced_layout.addRow("环境变量:", self.environment_vars_edit)
+        
+        # 超时设置
+        self.timeout_spinbox = QSpinBox()
+        self.timeout_spinbox.setRange(1, 86400)  # 1秒到24小时
+        self.timeout_spinbox.setValue(timeout)
+        advanced_layout.addRow("超时时间(秒):", self.timeout_spinbox)
+        
+        # 完成条件
+        self.completion_condition_edit = QLineEdit(completion_condition)
+        advanced_layout.addRow("完成条件:", self.completion_condition_edit)
+        
+        # 依赖项
+        self.dependencies_edit = QLineEdit(dependencies if dependencies else "")
+        advanced_layout.addRow("依赖项:", self.dependencies_edit)
+        
+        layout.addWidget(advanced_group)
         
         # 按钮
         buttons_layout = QHBoxLayout()
@@ -1108,7 +1565,7 @@ class ScriptDialog(QDialog):
         buttons_layout.addWidget(ok_btn)
         buttons_layout.addWidget(cancel_btn)
         
-        layout.addRow(buttons_layout)
+        layout.addLayout(buttons_layout)
     
     def browse_script(self):
         """浏览脚本文件"""
@@ -1119,9 +1576,176 @@ class ScriptDialog(QDialog):
         if file_path:
             self.path_edit.setText(file_path)
     
+    def browse_working_dir(self):
+        """浏览工作目录"""
+        dir_path = QFileDialog.getExistingDirectory(self, "选择工作目录", "")
+        if dir_path:
+            self.working_dir_edit.setText(dir_path)
+    
     def get_values(self):
         """获取输入的值"""
-        return self.path_edit.text(), self.type_combo.currentText()
+        return (
+            self.path_edit.text(),
+            self.type_combo.currentText(),
+            self.arguments_edit.text(),
+            self.working_dir_edit.text(),
+            self.environment_vars_edit.text(),
+            self.timeout_spinbox.value(),
+            self.completion_condition_edit.text(),
+            self.dependencies_edit.text()
+        )
+
+
+class TaskChainDialog(QDialog):
+    """任务链配置对话框"""
+    def __init__(self, parent=None, available_games=None, available_scripts=None, task_id="", name="", game="", script="", depends_on=None, enabled=True):
+        super().__init__(parent)
+        self.setWindowTitle("编辑任务链项")
+        self.resize(800, 600)
+        
+        available_games = available_games or []
+        available_scripts = available_scripts or []
+        depends_on = depends_on or []
+        
+        layout = QVBoxLayout(self)
+        
+        # 任务配置表单
+        form_layout = QFormLayout()
+        
+        self.id_edit = QLineEdit(task_id)
+        self.name_edit = QLineEdit(name)
+        
+        # 游戏下拉列表
+        self.game_combo = QComboBox()
+        for game in available_games:
+            self.game_combo.addItem(game)
+        if game:
+            self.game_combo.setCurrentText(game)
+        
+        # 脚本下拉列表
+        self.script_combo = QComboBox()
+        for script in available_scripts:
+            self.script_combo.addItem(script)
+        if script:
+            self.script_combo.setCurrentText(script)
+        
+        # 依赖项配置
+        self.depends_list = QListWidget()
+        self.depends_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        
+        # 添加所有可用任务到依赖项列表（游戏和脚本）
+        all_tasks = list(set(available_games + available_scripts))  # 合并并去重
+        for task in all_tasks:
+            self.depends_list.addItem(QListWidgetItem(task))
+        
+        # 查找当前依赖项并选中
+        for i in range(self.depends_list.count()):
+            item = self.depends_list.item(i)
+            if item.text() in depends_on:
+                item.setSelected(True)
+        
+        self.enabled_check = QCheckBox()
+        self.enabled_check.setChecked(enabled)
+        
+        form_layout.addRow("任务ID:", self.id_edit)
+        form_layout.addRow("名称:", self.name_edit)
+        form_layout.addRow("游戏:", self.game_combo)
+        form_layout.addRow("脚本:", self.script_combo)
+        form_layout.addRow("依赖项:", self.depends_list)
+        form_layout.addRow("启用:", self.enabled_check)
+        
+        layout.addLayout(form_layout)
+        
+        # 游戏和脚本详细信息显示区域
+        details_group = QGroupBox("配置详情")
+        details_layout = QVBoxLayout(details_group)
+        
+        # 游戏详情
+        game_details_label = QLabel("游戏详情:")
+        self.game_details_text = QTextEdit()
+        self.game_details_text.setMaximumHeight(100)
+        self.game_details_text.setReadOnly(True)
+        
+        # 脚本详情
+        script_details_label = QLabel("脚本详情:")
+        self.script_details_text = QTextEdit()
+        self.script_details_text.setMaximumHeight(100)
+        self.script_details_text.setReadOnly(True)
+        
+        details_layout.addWidget(game_details_label)
+        details_layout.addWidget(self.game_details_text)
+        details_layout.addWidget(script_details_label)
+        details_layout.addWidget(self.script_details_text)
+        
+        layout.addWidget(details_group)
+        
+        # 连接信号以显示详情
+        self.game_combo.currentTextChanged.connect(self.show_game_details)
+        self.script_combo.currentTextChanged.connect(self.show_script_details)
+        
+        # 按钮
+        buttons_layout = QHBoxLayout()
+        ok_btn = QPushButton("确定")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.clicked.connect(self.reject)
+        
+        buttons_layout.addWidget(ok_btn)
+        buttons_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(buttons_layout)
+        
+        # 显示初始详情
+        if game:
+            self.show_game_details(game)
+        if script:
+            self.show_script_details(script)
+    
+    def show_game_details(self, game_name):
+        """显示游戏详细信息"""
+        if game_name and hasattr(self.parent(), 'get_game_config_details'):
+            details = self.parent().get_game_config_details(game_name)
+            self.game_details_text.setPlainText(details)
+        else:
+            # 尝试从父窗口获取游戏列表，然后显示相关信息
+            games_list = self.parent().get_available_games() if hasattr(self.parent(), 'get_available_games') else []
+            if game_name in games_list:
+                # 显示简单的占位符信息
+                self.game_details_text.setPlainText(f"游戏: {game_name}\n状态: 已配置")
+            else:
+                self.game_details_text.setPlainText("未选择或未找到该游戏配置")
+    
+    def show_script_details(self, script_path):
+        """显示脚本详细信息"""
+        if script_path and hasattr(self.parent(), 'get_script_config_details'):
+            details = self.parent().get_script_config_details(script_path)
+            self.script_details_text.setPlainText(details)
+        else:
+            # 尝试从父窗口获取脚本列表，然后显示相关信息
+            scripts_list = self.parent().get_available_scripts() if hasattr(self.parent(), 'get_available_scripts') else []
+            if script_path in scripts_list:
+                # 显示简单的占位符信息
+                self.script_details_text.setPlainText(f"脚本: {script_path}\n状态: 已配置")
+            else:
+                self.script_details_text.setPlainText("未选择或未找到该脚本配置")
+    
+    def get_values(self):
+        """获取输入的值"""
+        # 获取选中的依赖项
+        selected_deps = []
+        for i in range(self.depends_list.count()):
+            item = self.depends_list.item(i)
+            if item.isSelected():
+                selected_deps.append(item.text())
+        
+        return (
+            self.id_edit.text(),
+            self.name_edit.text(),
+            self.game_combo.currentText(),
+            self.script_combo.currentText(),
+            selected_deps,
+            self.enabled_check.isChecked()
+        )
 
 
 def main():
@@ -1137,7 +1761,7 @@ def main():
     window.show()
     
     # 运行应用
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

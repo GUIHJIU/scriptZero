@@ -91,6 +91,8 @@ class GameAutomationFramework:
             await self.execute_scheduled_workflow(workflow)
         elif workflow_type == 'genshin_bettergi':
             await self.execute_genshin_bettergi_workflow(workflow)
+        elif workflow_type == 'task_chain':
+            await self.execute_task_chain(workflow)
         else:
             print(f"未知工作流类型: {workflow_type}")
     
@@ -118,6 +120,57 @@ class GameAutomationFramework:
             print("原神与BetterGI自动化流程执行成功")
         else:
             print("原神与BetterGI自动化流程执行失败")
+
+    async def execute_task_chain(self, workflow):
+        """执行任务链"""
+        print("执行任务链...")
+        
+        # 创建链式调度器
+        from .engine.task_chain_scheduler import TaskChainScheduler, ChainTask, ChainTaskStatus
+        import uuid
+        
+        chain_scheduler = TaskChainScheduler()
+        
+        # 设置回调
+        def on_task_start(task):
+            print(f"任务开始: {task.name}")
+        
+        def on_task_complete(task):
+            print(f"任务完成: {task.name}, 结果: {task.result}")
+        
+        def on_task_fail(task):
+            print(f"任务失败: {task.name}, 错误: {task.error}")
+        
+        chain_scheduler.on_task_start = on_task_start
+        chain_scheduler.on_task_complete = on_task_complete
+        chain_scheduler.on_task_fail = on_task_fail
+        
+        # 从工作流配置中获取任务列表
+        tasks_config = workflow.config.get('tasks', [])
+        task_ids = []
+        
+        for task_config in tasks_config:
+            if not task_config.get('enabled', True):
+                continue
+                
+            chain_task = ChainTask(
+                id=task_config.get('id', f'task_{uuid.uuid4().hex[:8]}'),
+                name=task_config.get('name', f'task_{len(task_ids)}'),
+                game_name=task_config['game'],
+                script_name=task_config['script'],
+                parameters=task_config.get('parameters', {}),
+                dependencies=task_config.get('dependencies', []),
+                error_handling=workflow.config.get('error_handling', 'continue'),
+                timeout=task_config.get('timeout'),
+                enabled=task_config.get('enabled', True),
+                status=ChainTaskStatus.PENDING
+            )
+            
+            task_id = await chain_scheduler.add_chain_task(chain_task)
+            task_ids.append(task_id)
+        
+        # 执行任务链
+        await chain_scheduler.execute_chain(task_ids, workflow.config.get('error_handling', 'continue'))
     
     async def execute_scheduled_workflow(self, workflow):
         """执行计划工作流（使用调度器）"""

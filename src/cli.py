@@ -18,6 +18,8 @@ from src.engine.task_scheduler import TaskScheduler, Task, TaskPriority
 from src.engine.execution_context import ExecutionContextManager, create_execution_context
 from src.engine.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
 from src.engine.result_collector import ResultCollector, TaskResult, ResultStatus
+from src.game_automation_framework import GameAutomationFramework
+from src.utils.config_validator import load_and_validate_config
 
 # 创建Typer应用
 app = typer.Typer(
@@ -29,27 +31,33 @@ app = typer.Typer(
 
 @app.command()
 def start(config_path: str = typer.Argument(..., help="配置文件路径"),
-          debug: bool = typer.Option(False, "--debug", "-d", help="启用调试模式")):
+          debug: bool = typer.Option(False, "--debug", "-d", help="启用调试模式"),
+          chain: str = typer.Option(None, "--chain", "-c", help="执行指定的任务链")):
     """
     启动自动化任务
     """
     print(f"启动自动化任务，配置文件: {config_path}")
     
     try:
-        # 加载配置
-        loader = ConfigLoader()
-        config = loader.load_from_single_file(config_path)
-        
-        # 设置调试模式
-        if debug:
-            config.core.debug_mode = True
-            config.core.log_level = "DEBUG"
-        
-        print(f"已加载配置: {config.project_name} (版本 {config.version})")
-        print(f"游戏: {config.game.game_name}")
-        
-        # 根据配置创建并运行适配器
-        asyncio.run(_run_adapter_from_config(config))
+        if chain:
+            # 执行任务链
+            print(f"执行任务链: {chain}")
+            asyncio.run(_run_chain_from_config(config_path, chain))
+        else:
+            # 加载配置
+            loader = ConfigLoader()
+            config = loader.load_from_single_file(config_path)
+            
+            # 设置调试模式
+            if debug:
+                config.core.debug_mode = True
+                config.core.log_level = "DEBUG"
+            
+            print(f"已加载配置: {config.project_name} (版本 {config.version})")
+            print(f"游戏: {config.game.game_name}")
+            
+            # 根据配置创建并运行适配器
+            asyncio.run(_run_adapter_from_config(config))
         
     except FileNotFoundError:
         print(f"错误: 配置文件不存在 - {config_path}")
@@ -252,9 +260,47 @@ async def _run_adapter_from_config(config):
     return True
 
 
+async def _run_chain_from_config(config_path: str, chain_name: str = None):
+    """根据配置运行任务链"""
+    print("初始化任务链调度器...")
+    
+    # 加载配置
+    config = load_and_validate_config(config_path)
+    
+    # 创建框架实例
+    framework = GameAutomationFramework()
+    
+    # 找到指定的链配置
+    workflows = config.workflow
+    
+    if chain_name:
+        target_workflow = None
+        for wf in workflows:
+            if wf.name == chain_name and wf.type == 'task_chain':
+                target_workflow = wf
+                break
+        if target_workflow:
+            workflows = [target_workflow]
+        else:
+            print(f"错误: 未找到名为 '{chain_name}' 的任务链")
+            return False
+    
+    # 只执行类型为 task_chain 的工作流
+    for workflow in workflows:
+        if workflow.type == 'task_chain':
+            print(f"执行任务链: {workflow.name}")
+            await framework.execute_task_chain(workflow)
+    
+    return True
+
+
 def main():
     """主入口函数"""
     app()
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":

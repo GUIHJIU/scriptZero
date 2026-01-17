@@ -48,10 +48,12 @@ class ModernUI:
         
         # 预定义的配置选项
         self.predefined_configs = {
-            "game_types": ["script_chain", "game", "mixed"],
+            "game_types": ["script_chain", "game", "mixed", "task_chain"],
             "action_types": ["launch", "wait_for", "click", "key_press", "type_text", "wait_for_image"],
             "buttons": ["left", "right", "middle"],
-            "condition_types": ["timeout", "image_detected", "process_exit", "window_active"]
+            "condition_types": ["timeout", "image_detected", "process_exit", "window_active"],
+            "games": [],
+            "scripts": []
         }
         
         # 创建界面
@@ -179,11 +181,14 @@ class ModernUI:
         # 游戏配置标签页
         self.create_game_config_tab()
         
-        # 工作流配置标签页
-        self.create_workflow_config_tab()
-        
         # 脚本配置标签页
         self.create_script_config_tab()
+        
+        # 链式任务配置标签页
+        self.create_chain_config_tab()
+        
+        # 工作流配置标签页
+        self.create_workflow_config_tab()
         
         # 控制按钮区域
         control_frame = ttk.Frame(main_frame)
@@ -263,6 +268,37 @@ class ModernUI:
         main_frame.rowconfigure(1, weight=1)
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
+    
+    def process_variables(self, config):
+        """处理配置中的变量引用，将 ${variables.var_name} 替换为实际值"""
+        import re
+        
+        # 获取变量字典
+        variables = config.get('variables', {})
+        
+        def replace_vars(obj):
+            if isinstance(obj, str):
+                # 查找并替换 ${...} 格式的变量引用
+                pattern = r'\$\{([^}]+)\}'
+                matches = re.findall(pattern, obj)
+                
+                for match in matches:
+                    # 解析变量路径，例如 "variables.game_path"
+                    parts = match.split('.')
+                    if len(parts) >= 2 and parts[0] == 'variables':
+                        var_name = parts[1]
+                        if var_name in variables:
+                            obj = obj.replace(f"${{{match}}}", str(variables[var_name]))
+                
+                return obj
+            elif isinstance(obj, dict):
+                return {k: replace_vars(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [replace_vars(item) for item in obj]
+            else:
+                return obj
+        
+        return replace_vars(config)
         
     def create_basic_config_tab(self):
         """创建基本配置标签页"""
@@ -356,10 +392,26 @@ class ModernUI:
             # 添加导入/导出按钮
             ttkb.Button(var_button_frame, text="导入变量", command=self.import_variables, bootstyle="outline-info").pack(side=tk.RIGHT, padx=(0, 5))
             ttkb.Button(var_button_frame, text="导出变量", command=self.export_variables, bootstyle="outline-info").pack(side=tk.RIGHT, padx=(0, 5))
+            
+            # 添加提示标签
+            hint_label = ttkb.Label(var_button_frame, text="提示: 使用 ${variables.变量名} 引用变量", bootstyle="secondary")
+            hint_label.pack(side=tk.RIGHT, padx=(10, 0))
+            
+            # 添加详细提示按钮
+            help_btn = ttkb.Button(var_button_frame, text="?", command=self.show_variable_help, bootstyle="outline-info", width=3)
+            help_btn.pack(side=tk.RIGHT, padx=(0, 5))
         else:
             ttk.Button(var_button_frame, text="添加变量", command=self.add_variable).pack(side=tk.LEFT, padx=(0, 5))
             ttk.Button(var_button_frame, text="编辑变量", command=self.edit_variable).pack(side=tk.LEFT, padx=(0, 5))
             ttk.Button(var_button_frame, text="删除变量", command=self.delete_variable).pack(side=tk.LEFT, padx=(0, 5))
+            
+            # 添加提示标签
+            hint_label = ttk.Label(var_button_frame, text="提示: 使用 ${variables.变量名} 引用变量")
+            hint_label.pack(side=tk.RIGHT, padx=(10, 0))
+            
+            # 添加详细提示按钮
+            help_btn = ttk.Button(var_button_frame, text="?", command=self.show_variable_help, width=3)
+            help_btn.pack(side=tk.RIGHT, padx=(0, 5))
     
     def create_game_config_tab(self):
         """创建游戏配置标签页"""
@@ -370,7 +422,7 @@ class ModernUI:
         self.notebook.add(game_frame, text="游戏配置")
         
         # 游戏配置表格
-        columns = ('name', 'executable', 'window_title', 'arguments')
+        columns = ('name', 'executable', 'window_title', 'arguments', 'working_dir', 'detection_timeout')
         if HAS_TTKBOOTSTRAP:
             self.games_tree = ttkb.Treeview(game_frame, columns=columns, show='headings', height=15)
             # 添加样式
@@ -382,12 +434,16 @@ class ModernUI:
         self.games_tree.heading('executable', text='可执行文件')
         self.games_tree.heading('window_title', text='窗口标题')
         self.games_tree.heading('arguments', text='启动参数')
+        self.games_tree.heading('working_dir', text='工作目录')
+        self.games_tree.heading('detection_timeout', text='检测超时(秒)')
         
         # 设置列宽
         self.games_tree.column('name', width=100)
-        self.games_tree.column('executable', width=250)
-        self.games_tree.column('window_title', width=150)
-        self.games_tree.column('arguments', width=200)
+        self.games_tree.column('executable', width=200)
+        self.games_tree.column('window_title', width=120)
+        self.games_tree.column('arguments', width=100)
+        self.games_tree.column('working_dir', width=150)
+        self.games_tree.column('detection_timeout', width=100)
         
         # 滚动条
         if HAS_TTKBOOTSTRAP:
@@ -426,7 +482,7 @@ class ModernUI:
         self.notebook.add(workflow_frame, text="工作流")
         
         # 工作流配置表格
-        columns = ('name', 'type', 'description', 'enabled')
+        columns = ('name', 'type', 'game', 'script', 'description', 'enabled')
         if HAS_TTKBOOTSTRAP:
             self.workflow_tree = ttkb.Treeview(workflow_frame, columns=columns, show='headings', height=15)
             # 添加样式
@@ -436,13 +492,17 @@ class ModernUI:
         
         self.workflow_tree.heading('name', text='名称')
         self.workflow_tree.heading('type', text='类型')
+        self.workflow_tree.heading('game', text='关联游戏')
+        self.workflow_tree.heading('script', text='关联脚本')
         self.workflow_tree.heading('description', text='描述')
         self.workflow_tree.heading('enabled', text='启用')
         
         # 设置列宽
-        self.workflow_tree.column('name', width=150)
-        self.workflow_tree.column('type', width=100)
-        self.workflow_tree.column('description', width=300)
+        self.workflow_tree.column('name', width=120)
+        self.workflow_tree.column('type', width=80)
+        self.workflow_tree.column('game', width=100)
+        self.workflow_tree.column('script', width=100)
+        self.workflow_tree.column('description', width=200)
         self.workflow_tree.column('enabled', width=50)
         
         # 滚动条
@@ -606,6 +666,10 @@ class ModernUI:
         self.version_var.set(str(self.current_config.get('version', '1.0')))
         self.name_var.set(self.current_config.get('name', '新自动化任务'))
         
+        # 刷新预定义配置的游戏和脚本列表
+        self.predefined_configs['games'] = list(self.current_config.get('games', {}).keys())
+        self.predefined_configs['scripts'] = [script.get('path', '') for script in self.current_config.get('scripts', [])]
+        
         # 刷新变量表
         for item in self.variables_tree.get_children():
             self.variables_tree.delete(item)
@@ -624,18 +688,6 @@ class ModernUI:
                 args_str
             ))
         
-        # 刷新工作流表
-        for item in self.workflow_tree.get_children():
-            self.workflow_tree.delete(item)
-        for wf in self.current_config.get('workflow', []):
-            enabled_str = "是" if wf.get('enabled', True) else "否"
-            self.workflow_tree.insert('', tk.END, values=(
-                wf.get('name', ''),
-                wf.get('type', ''),
-                wf.get('description', ''),
-                enabled_str
-            ))
-        
         # 刷新脚本表
         for item in self.scripts_tree.get_children():
             self.scripts_tree.delete(item)
@@ -648,6 +700,43 @@ class ModernUI:
                 args_str,
                 timeout
             ))
+        
+        # 刷新链式任务表
+        for item in self.chain_tasks_tree.get_children():
+            self.chain_tasks_tree.delete(item)
+        # 遍历工作流，查找类型为task_chain的配置
+        for wf in self.current_config.get('workflow', []):
+            if wf.get('type') == 'task_chain':
+                tasks = wf.get('config', {}).get('tasks', [])
+                for task in tasks:
+                    enabled_str = "是" if task.get('enabled', True) else "否"
+                    dependencies_str = ", ".join(task.get('depends_on', [])) if task.get('depends_on') else "无"
+                    parameters_str = str(task.get('parameters', {}))
+                    self.chain_tasks_tree.insert('', tk.END, values=(
+                        task.get('name', ''),
+                        task.get('game', ''),
+                        task.get('script', ''),
+                        parameters_str,
+                        enabled_str,
+                        dependencies_str
+                    ))
+        
+        # 刷新工作流表（排除task_chain类型的，因为它们在链式任务表中显示）
+        for item in self.workflow_tree.get_children():
+            self.workflow_tree.delete(item)
+        for wf in self.current_config.get('workflow', []):
+            if wf.get('type') != 'task_chain':  # 不显示task_chain类型的工作流，它们在链式任务表中显示
+                enabled_str = "是" if wf.get('enabled', True) else "否"
+                game_name = wf.get('game', '未指定')  # 获取关联的游戏
+                script_name = wf.get('script', '未指定')  # 获取关联的脚本
+                self.workflow_tree.insert('', tk.END, values=(
+                    wf.get('name', ''),
+                    wf.get('type', ''),
+                    game_name,
+                    script_name,
+                    wf.get('description', ''),
+                    enabled_str
+                ))
     
     def build_config_from_ui(self) -> Dict[str, Any]:
         """从界面构建配置字典"""
@@ -680,10 +769,12 @@ class ModernUI:
             workflow_item = {
                 'name': values[0],
                 'type': values[1],
-                'enabled': values[3] == "是"
+                'game': values[2],  # 关联的游戏
+                'script': values[3],  # 关联的脚本
+                'enabled': values[5] == "是"
             }
-            if values[2]:  # 添加描述
-                workflow_item['description'] = values[2]
+            if values[4]:  # 添加描述
+                workflow_item['description'] = values[4]
             config['workflow'].append(workflow_item)
         
         # 添加脚本
@@ -703,6 +794,33 @@ class ModernUI:
                 }
             }
             config['scripts'].append(script_item)
+        
+        # 添加链式任务配置为工作流
+        chain_tasks = []
+        for child in self.chain_tasks_tree.get_children():
+            values = self.chain_tasks_tree.item(child)['values']
+            task_item = {
+                'name': values[0],
+                'game': values[1],
+                'script': values[2],
+                'parameters': eval(values[3]) if values[3] != "{}" else {},
+                'enabled': values[4] == "是",
+                'depends_on': [x.strip() for x in values[5].split(",")] if values[5] != "无" else []
+            }
+            chain_tasks.append(task_item)
+        
+        # 如果有链式任务，添加到工作流中
+        if chain_tasks:
+            chain_workflow = {
+                'name': '链式任务配置',
+                'type': 'task_chain',
+                'config': {
+                    'error_handling': 'continue',
+                    'tasks': chain_tasks
+                },
+                'enabled': True
+            }
+            config['workflow'].append(chain_workflow)
         
         return config
     
@@ -801,6 +919,8 @@ class ModernUI:
             self.workflow_tree.insert('', tk.END, values=(
                 dialog.result['name'], 
                 dialog.result['type'], 
+                dialog.result.get('game', ''),
+                dialog.result.get('script', ''),
                 dialog.result.get('description', ''),
                 enabled_str))
     
@@ -816,8 +936,10 @@ class ModernUI:
                 existing_values={
                     'name': values[0],
                     'type': values[1],
-                    'description': values[2],
-                    'enabled': values[3] == "是"
+                    'game': values[2],
+                    'script': values[3],
+                    'description': values[4],
+                    'enabled': values[5] == "是"
                 },
                 predefined_configs=self.predefined_configs
             )
@@ -826,6 +948,8 @@ class ModernUI:
                 self.workflow_tree.item(selected, values=(
                     dialog.result['name'], 
                     dialog.result['type'], 
+                    dialog.result.get('game', ''),
+                    dialog.result.get('script', ''),
                     dialog.result.get('description', ''),
                     enabled_str))
         else:
@@ -886,22 +1010,198 @@ class ModernUI:
             self.scripts_tree.delete(selected)
         else:
             messagebox.showwarning("警告", "请选择要删除的脚本")
-    
+
+    def show_variable_help(self):
+        """显示变量引用帮助信息"""
+        help_text = (
+            "变量引用使用说明:\n\n"
+            "1. 格式: ${variables.变量名}\n"
+            "2. 用途: 在配置中引用变量值，避免硬编码\n"
+            "3. 优势: 便于批量管理和维护配置\n\n"
+            "示例:\n"
+            "  - 游戏路径: ${variables.game_path}\n"
+            "  - 账户信息: ${variables.account}\n"
+            "  - 其他路径: ${variables.templates_path}\n\n"
+            "注意: 变量名区分大小写，请确保变量名拼写正确。"
+        )
+        messagebox.showinfo("变量引用帮助", help_text)
+
+    def create_chain_config_tab(self):
+        """创建链式任务配置标签页"""
+        if HAS_TTKBOOTSTRAP:
+            chain_frame = ttkb.Frame(self.notebook)
+        else:
+            chain_frame = ttk.Frame(self.notebook)
+        self.notebook.add(chain_frame, text="链式任务")
+        
+        # 链式任务配置表格
+        columns = ('name', 'game', 'script', 'parameters', 'enabled', 'dependencies')
+        if HAS_TTKBOOTSTRAP:
+            self.chain_tasks_tree = ttkb.Treeview(chain_frame, columns=columns, show='headings', height=15)
+            # 添加样式
+            self.chain_tasks_tree.configure(selectmode='browse')
+        else:
+            self.chain_tasks_tree = ttk.Treeview(chain_frame, columns=columns, show='headings', height=15)
+        
+        self.chain_tasks_tree.heading('name', text='任务名称')
+        self.chain_tasks_tree.heading('game', text='游戏')
+        self.chain_tasks_tree.heading('script', text='脚本')
+        self.chain_tasks_tree.heading('parameters', text='参数')
+        self.chain_tasks_tree.heading('enabled', text='启用')
+        self.chain_tasks_tree.heading('dependencies', text='依赖')
+        
+        # 设置列宽
+        self.chain_tasks_tree.column('name', width=120)
+        self.chain_tasks_tree.column('game', width=100)
+        self.chain_tasks_tree.column('script', width=200)
+        self.chain_tasks_tree.column('parameters', width=150)
+        self.chain_tasks_tree.column('enabled', width=60)
+        self.chain_tasks_tree.column('dependencies', width=100)
+        
+        # 滚动条
+        if HAS_TTKBOOTSTRAP:
+            chain_scrollbar = ttkb.Scrollbar(chain_frame, orient=tk.VERTICAL, command=self.chain_tasks_tree.yview)
+        else:
+            chain_scrollbar = ttk.Scrollbar(chain_frame, orient=tk.VERTICAL, command=self.chain_tasks_tree.yview)
+        
+        self.chain_tasks_tree.configure(yscrollcommand=chain_scrollbar.set)
+        
+        # 布局
+        self.chain_tasks_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        chain_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 链式任务操作按钮
+        chain_button_frame = ttk.Frame(chain_frame)
+        chain_button_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        if HAS_TTKBOOTSTRAP:
+            ttkb.Button(chain_button_frame, text="添加任务", command=self.add_chain_task, bootstyle="outline-success").pack(side=tk.LEFT, padx=(0, 5))
+            ttkb.Button(chain_button_frame, text="编辑任务", command=self.edit_chain_task, bootstyle="outline-warning").pack(side=tk.LEFT, padx=(0, 5))
+            ttkb.Button(chain_button_frame, text="删除任务", command=self.delete_chain_task, bootstyle="outline-danger").pack(side=tk.LEFT, padx=(0, 5))
+            
+            # 添加提示标签
+            hint_label = ttkb.Label(chain_button_frame, text="提示: 任务执行按列表顺序，依赖项需先完成", bootstyle="secondary")
+            hint_label.pack(side=tk.LEFT, padx=(20, 0))
+        else:
+            ttk.Button(chain_button_frame, text="添加任务", command=self.add_chain_task).pack(side=tk.LEFT, padx=(0, 5))
+            ttk.Button(chain_button_frame, text="编辑任务", command=self.edit_chain_task).pack(side=tk.LEFT, padx=(0, 5))
+            ttk.Button(chain_button_frame, text="删除任务", command=self.delete_chain_task).pack(side=tk.LEFT, padx=(0, 5))
+            
+            # 添加提示标签
+            hint_label = ttk.Label(chain_button_frame, text="提示: 任务执行按列表顺序，依赖项需先完成")
+            hint_label.pack(side=tk.LEFT, padx=(20, 0))
+
+    def add_chain_task(self):
+        """添加链式任务"""
+        dialog = ChainTaskDialog(self.root, "添加链式任务", predefined_configs=self.predefined_configs)
+        if dialog.result:
+            enabled_str = "是" if dialog.result.get('enabled', True) else "否"
+            dependencies_str = ", ".join(dialog.result.get('depends_on', [])) if dialog.result.get('depends_on') else "无"
+            parameters_str = str(dialog.result.get('parameters', {}))
+            self.chain_tasks_tree.insert('', tk.END, values=(
+                dialog.result['name'],
+                dialog.result['game'],
+                dialog.result['script'],
+                parameters_str,
+                enabled_str,
+                dependencies_str
+            ))
+
+    def edit_chain_task(self):
+        """编辑选中的链式任务"""
+        selected = self.chain_tasks_tree.selection()
+        if selected:
+            item = self.chain_tasks_tree.item(selected)
+            values = item['values']
+            dialog = ChainTaskDialog(
+                self.root,
+                "编辑链式任务",
+                existing_values={
+                    'name': values[0],
+                    'game': values[1],
+                    'script': values[2],
+                    'parameters': eval(values[3]) if values[3] != "{}" else {},
+                    'enabled': values[4] == "是",
+                    'depends_on': [x.strip() for x in values[5].split(",")] if values[5] != "无" else []
+                },
+                predefined_configs=self.predefined_configs
+            )
+            if dialog.result:
+                enabled_str = "是" if dialog.result.get('enabled', True) else "否"
+                dependencies_str = ", ".join(dialog.result.get('depends_on', [])) if dialog.result.get('depends_on') else "无"
+                parameters_str = str(dialog.result.get('parameters', {}))
+                self.chain_tasks_tree.item(selected, values=(
+                    dialog.result['name'],
+                    dialog.result['game'],
+                    dialog.result['script'],
+                    parameters_str,
+                    enabled_str,
+                    dependencies_str
+                ))
+        else:
+            messagebox.showwarning("警告", "请选择要编辑的链式任务")
+
+    def delete_chain_task(self):
+        """删除选中的链式任务"""
+        selected = self.chain_tasks_tree.selection()
+        if selected:
+            self.chain_tasks_tree.delete(selected)
+        else:
+            messagebox.showwarning("警告", "请选择要删除的链式任务")
+
     def preview_config(self):
         """预览配置"""
         config = self.build_config_from_ui()
-        config_yaml = yaml.dump(config, default_flow_style=False, allow_unicode=True)
         
         # 创建预览窗口
         preview_window = tk.Toplevel(self.root)
         preview_window.title("配置预览")
-        preview_window.geometry("800x600")
+        preview_window.geometry("1000x700")
         
-        text_area = tk.Text(preview_window, wrap=tk.NONE)
-        text_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # 创建选项卡控件
+        notebook = ttk.Notebook(preview_window)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        text_area.insert(tk.END, config_yaml)
-        text_area.config(state=tk.DISABLED)
+        # 原始配置标签页
+        raw_frame = ttk.Frame(notebook)
+        notebook.add(raw_frame, text="原始配置")
+        
+        raw_text_area = tk.Text(raw_frame, wrap=tk.NONE)
+        raw_scrollbar = ttk.Scrollbar(raw_frame, orient=tk.VERTICAL, command=raw_text_area.yview)
+        raw_text_area.configure(yscrollcommand=raw_scrollbar.set)
+        
+        raw_text_area.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        raw_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        raw_config_yaml = yaml.dump(config, default_flow_style=False, allow_unicode=True)
+        raw_text_area.insert(tk.END, raw_config_yaml)
+        raw_text_area.config(state=tk.DISABLED)
+        
+        # 变量替换后配置标签页
+        processed_frame = ttk.Frame(notebook)
+        notebook.add(processed_frame, text="变量替换后")
+        
+        processed_text_area = tk.Text(processed_frame, wrap=tk.NONE)
+        processed_scrollbar = ttk.Scrollbar(processed_frame, orient=tk.VERTICAL, command=processed_text_area.yview)
+        processed_text_area.configure(yscrollcommand=processed_scrollbar.set)
+        
+        processed_text_area.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        processed_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        # 处理变量引用
+        processed_config = self.process_variables(config)
+        processed_config_yaml = yaml.dump(processed_config, default_flow_style=False, allow_unicode=True)
+        
+        processed_text_area.insert(tk.END, processed_config_yaml)
+        processed_text_area.config(state=tk.DISABLED)
+        
+        # 配置网格权重
+        raw_frame.columnconfigure(0, weight=1)
+        raw_frame.rowconfigure(0, weight=1)
+        processed_frame.columnconfigure(0, weight=1)
+        processed_frame.rowconfigure(0, weight=1)
+        preview_window.columnconfigure(0, weight=1)
+        preview_window.rowconfigure(0, weight=1)
     
     def start_execution(self):
         """开始执行自动化任务"""
@@ -1223,7 +1523,7 @@ class VariableDialog:
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(title)
-        self.dialog.geometry("500x250")
+        self.dialog.geometry("500x300")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -1256,9 +1556,18 @@ class VariableDialog:
         self.desc_var = tk.StringVar(value=existing_values.get('description', '') if existing_values else "")
         ttk.Entry(main_frame, textvariable=self.desc_var, width=30).grid(row=2, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
         
+        # 提示信息
+        hint_frame = ttk.Frame(main_frame)
+        hint_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        
+        ttk.Label(hint_frame, text="变量引用格式: ${variables.变量名}", font=('TkDefaultFont', 9, 'bold'), foreground="blue").pack(anchor=tk.W)
+        ttk.Label(hint_frame, text="例如: ${variables.game_path}, ${variables.account}", font=('TkDefaultFont', 8), foreground="darkgreen").pack(anchor=tk.W)
+        ttk.Label(hint_frame, text="提示: 在配置中使用变量引用可以实现动态配置", font=('TkDefaultFont', 8, 'italic'), foreground="gray").pack(anchor=tk.W)
+        ttk.Label(hint_frame, text="用途: 避免硬编码，便于批量管理和维护", font=('TkDefaultFont', 8, 'italic'), foreground="gray").pack(anchor=tk.W)
+        
         # 按钮
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=3, column=0, columnspan=2, pady=20)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=20)
         
         if HAS_TTKBOOTSTRAP:
             ttkb.Button(button_frame, text="确定", command=self.ok_clicked, bootstyle="success").pack(side=tk.LEFT, padx=5)
@@ -1402,7 +1711,7 @@ class WorkflowDialog:
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(title)
-        self.dialog.geometry("500x280")
+        self.dialog.geometry("600x400")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -1432,18 +1741,36 @@ class WorkflowDialog:
                                   values=self.predefined_configs.get("game_types", ["script_chain", "game", "mixed"]), state="readonly")
         type_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
         
+        # 关联游戏
+        ttk.Label(main_frame, text="关联游戏:").grid(row=2, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.game_var = tk.StringVar(value=existing_values.get('game', '') if existing_values else "")
+        game_combo = ttk.Combobox(main_frame, textvariable=self.game_var, 
+                                  values=self.predefined_configs.get("games", []), state="readonly")
+        game_combo.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
+        # 关联脚本
+        ttk.Label(main_frame, text="关联脚本:").grid(row=3, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.script_var = tk.StringVar(value=existing_values.get('script', '') if existing_values else "")
+        script_combo = ttk.Combobox(main_frame, textvariable=self.script_var, 
+                                    values=self.predefined_configs.get("scripts", []), state="readonly")
+        script_combo.grid(row=3, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
         # 描述
-        ttk.Label(main_frame, text="描述:").grid(row=2, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        ttk.Label(main_frame, text="描述:").grid(row=4, column=0, sticky=tk.W, padx=(0, 5), pady=5)
         self.desc_var = tk.StringVar(value=existing_values.get('description', '') if existing_values else "")
-        ttk.Entry(main_frame, textvariable=self.desc_var, width=30).grid(row=2, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        ttk.Entry(main_frame, textvariable=self.desc_var, width=30).grid(row=4, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
         
         # 启用状态
         self.enabled_var = tk.BooleanVar(value=existing_values.get('enabled', True) if existing_values else True)
-        ttk.Checkbutton(main_frame, text="启用", variable=self.enabled_var).grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        ttk.Checkbutton(main_frame, text="启用", variable=self.enabled_var).grid(row=5, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        # 提示信息
+        ttk.Label(main_frame, text="提示: 选择要关联的游戏和脚本，或留空表示不关联", foreground="gray").grid(
+            row=6, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
         # 按钮
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=4, column=0, columnspan=2, pady=20)
+        button_frame.grid(row=7, column=0, columnspan=2, pady=20)
         
         if HAS_TTKBOOTSTRAP:
             ttkb.Button(button_frame, text="确定", command=self.ok_clicked, bootstyle="success").pack(side=tk.LEFT, padx=5)
@@ -1468,6 +1795,8 @@ class WorkflowDialog:
         self.result = {
             'name': self.name_var.get(),
             'type': self.type_var.get(),
+            'game': self.game_var.get(),
+            'script': self.script_var.get(),
             'description': self.desc_var.get(),
             'enabled': self.enabled_var.get()
         }
@@ -1478,6 +1807,137 @@ class WorkflowDialog:
         self.result = None
         self.dialog.destroy()
 
+
+class ChainTaskDialog:
+    """链式任务配置对话框 - 现代化样式"""
+    def __init__(self, parent, title, existing_values=None, predefined_configs=None):
+        self.parent = parent
+        self.result = None
+        self.predefined_configs = predefined_configs or {}
+        
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title(title)
+        self.dialog.geometry("700x500")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        self.create_widgets(existing_values)
+        
+        # 居中显示
+        self.dialog.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() // 2) - (self.dialog.winfo_width() // 2)
+        y = parent.winfo_y() + (parent.winfo_height() // 2) - (self.dialog.winfo_height() // 2)
+        self.dialog.geometry(f"+{x}+{y}")
+        
+    def create_widgets(self, existing_values):
+        """创建对话框组件"""
+        # 主框架
+        main_frame = ttk.Frame(self.dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 任务名称
+        ttk.Label(main_frame, text="任务名称 *:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.name_var = tk.StringVar(value=existing_values.get('name', '') if existing_values else "")
+        ttk.Entry(main_frame, textvariable=self.name_var, width=30).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
+        # 游戏选择
+        ttk.Label(main_frame, text="游戏 *:").grid(row=1, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.game_var = tk.StringVar(value=existing_values.get('game', '') if existing_values else "")
+        game_combo = ttk.Combobox(main_frame, textvariable=self.game_var, 
+                                  values=self.predefined_configs.get("games", []), state="readonly")
+        game_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
+        # 脚本选择
+        ttk.Label(main_frame, text="脚本 *:").grid(row=2, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.script_var = tk.StringVar(value=existing_values.get('script', '') if existing_values else "")
+        script_combo = ttk.Combobox(main_frame, textvariable=self.script_var, 
+                                    values=self.predefined_configs.get("scripts", []), state="readonly")
+        script_combo.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
+        # 参数配置（JSON格式）
+        ttk.Label(main_frame, text="参数 (JSON格式):", font=('TkDefaultFont', 9, 'italic')).grid(row=3, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.params_text = tk.Text(main_frame, width=40, height=4)
+        self.params_text.grid(row=3, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        if existing_values and 'parameters' in existing_values:
+            import json
+            self.params_text.insert(tk.END, json.dumps(existing_values['parameters'], indent=2, ensure_ascii=False))
+        
+        # 依赖任务
+        ttk.Label(main_frame, text="依赖任务 (逗号分隔):", font=('TkDefaultFont', 9, 'italic')).grid(row=4, column=0, sticky=tk.W, padx=(0, 5), pady=5)
+        self.deps_var = tk.StringVar(value=", ".join(existing_values.get('depends_on', [])) if existing_values else "")
+        ttk.Entry(main_frame, textvariable=self.deps_var, width=30).grid(row=4, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        
+        # 启用状态
+        self.enabled_var = tk.BooleanVar(value=existing_values.get('enabled', True) if existing_values else True)
+        ttk.Checkbutton(main_frame, text="启用此任务", variable=self.enabled_var).grid(row=5, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        # 添加提示标签
+        ttk.Label(main_frame, text="* 必填项 | " +
+                  "参数格式为JSON (例: {\"timeout\": 3600, \"mode\": \"daily\"}) | " +
+                  "不知道则不加", foreground="gray").grid(row=6, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        # 按钮
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=7, column=0, columnspan=2, pady=20)
+        
+        if HAS_TTKBOOTSTRAP:
+            from ttkbootstrap import Button as ttkbButton
+            ttkbButton(button_frame, text="确定", command=self.ok_clicked, bootstyle="success").pack(side=tk.LEFT, padx=5)
+            ttkbButton(button_frame, text="取消", command=self.cancel_clicked, bootstyle="secondary").pack(side=tk.LEFT, padx=5)
+        else:
+            ttk.Button(button_frame, text="确定", command=self.ok_clicked).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="取消", command=self.cancel_clicked).pack(side=tk.LEFT, padx=5)
+        
+        # 绑定回车键
+        self.dialog.bind('<Return>', lambda e: self.ok_clicked())
+        self.dialog.bind('<Escape>', lambda e: self.cancel_clicked())
+        
+        # 使对话框可见
+        self.dialog.focus_set()
+        
+    def ok_clicked(self):
+        """确定按钮点击"""
+        # 验证必填项
+        if not self.name_var.get().strip():
+            messagebox.showwarning("警告", "请输入任务名称")
+            return
+        if not self.game_var.get().strip():
+            messagebox.showwarning("警告", "请选择游戏")
+            return
+        if not self.script_var.get().strip():
+            messagebox.showwarning("警告", "请选择脚本")
+            return
+            
+        # 验证参数格式
+        params_json = self.params_text.get(1.0, tk.END).strip()
+        params_dict = {}
+        if params_json:
+            try:
+                import json
+                params_dict = json.loads(params_json)
+            except json.JSONDecodeError as e:
+                messagebox.showerror("错误", f"参数格式错误: {str(e)}")
+                return
+            
+        self.result = {
+            'name': self.name_var.get(),
+            'game': self.game_var.get(),
+            'script': self.script_var.get(),
+            'parameters': params_dict,
+            'enabled': self.enabled_var.get(),
+            'depends_on': [x.strip() for x in self.deps_var.get().split(",") if x.strip()]
+        }
+        self.dialog.destroy()
+        
+    def cancel_clicked(self):
+        """取消按钮点击"""
+        self.result = None
+        self.dialog.destroy()
+
+
+if __name__ == "__main__":
+    app = ModernUI()
+    app.run()
 
 class ScriptConfigDialog:
     """脚本配置对话框 - 现代化样式"""
